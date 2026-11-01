@@ -178,7 +178,9 @@ jobs:
           manifest_path = Path("public/app-updates/android.json")
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           manifest["version"] = package["version"]
-          manifest["releaseNotes"] = "Android 1.0.4: stable-signed native voice assistant, selected-app quick launch, Glass Wave Blob and permission controls. Android confirms installation."
+          manifest["publishedVersion"] = package["version"]
+          manifest["installMode"] = "in_place"
+          manifest["releaseNotes"] = "Android " + package["version"] + ": stable-signed voice assistant, tap-to-talk, native Hindi/English TTS, selected-app shortcuts and permission controls. Install directly over the previous stable-signed ULTRON app."
           manifest_path.write_text(json.dumps(manifest, indent=2) + chr(10), encoding="utf-8")
           PY
             git add public/downloads/ULTRON-Android.apk public/app-updates/android.json
