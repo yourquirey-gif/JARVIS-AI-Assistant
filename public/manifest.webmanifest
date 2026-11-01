@@ -1,12 +1,16 @@
 {
   "id": "/",
-  "name": "ULTRON Personal AI",
+  "name": "ULTRON — Personal AI Assistant",
   "short_name": "ULTRON",
-  "description": "Voice-first personal AI assistant",
+  "description": "A voice-first personal AI assistant with a holographic interface.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#050b16",
-  "theme_color": "#050b16",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "any",
+  "background_color": "#030914",
+  "theme_color": "#030914",
+  "categories": ["productivity", "utilities"],
+  "prefer_related_applications": false,
   "icons": [{"src": "/ultron-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
 }

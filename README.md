@@ -1,45 +1,41 @@
-# ULTRON AI Assistant
+# ULTRON — Personal AI Assistant
 
-ULTRON is a lightweight, voice-first personal assistant with an animated metallic hologram.
+ULTRON is a voice-first assistant with a metallic hologram, an installable web app, and a Windows PC companion.
 
-## Three-part architecture
-1. **Vercel web app / PWA** — ULTRON hologram, AI conversation, voice interface, permissions, telemetry panels and approval cards.
-2. **Render Cloud AI API** — general conversation and Hindi/English command planning through Groq. It cannot access the PC.
-3. **ULTRON PC Companion** — Windows desktop app that starts a loopback-only local service on the user's own PC.
+## Architecture
+1. **Vercel website / PWA** — same-origin installer download, desktop and mobile UI, voice interface, command centre panels and approval cards.
+2. **Render Cloud AI API** — general conversation and Hindi/English command planning through Groq. It cannot access the user's PC.
+3. **ULTRON PC Companion** — Windows desktop app that runs a loopback-only service on the user's PC.
 
-## Compatibility strategy
-- The avatar uses Canvas 2D, not WebGL. This avoids requiring a modern GPU or a 3D shader engine.
-- Automatic quality mode chooses a lower animation rate and fewer effects on low-memory / low-core devices; select LOW or HIGH manually.
-- The frontend build target includes Chromium 109 and Firefox 115 ESR-era syntax, corresponding to the final browser generations that can be installed on older Windows 7 PCs.
-- Windows 7 itself is out of security support. Browser and driver support varies by machine; microphone speech recognition and local-network access are browser-dependent. No website can make an unsupported browser or GPU driver fully compatible.
-- Modern Windows versions use the same frontend and can select HIGH rendering quality.
+## Install
+- Open the Vercel website and install ULTRON as a PWA from the browser's Install / Add to Home Screen option.
+- The Windows companion is served from the same website origin at `/downloads/ULTRON-Desktop.exe`. A future custom domain automatically uses its own URL for the installer.
+- Run the Windows companion, enable approved PC actions, and start the local service.
+- The website automatically discovers and pairs with the companion when opened from an exact trusted origin. No manual pairing-key copy/paste is needed for trusted origins.
+- Keep the Windows companion running (the Minimize button keeps it active). Closing it stops the local service.
 
-## Install and run
-1. Open the Vercel website and install ULTRON as an app when your browser supports PWA installation.
-2. Download ULTRON-Desktop.exe from the GitHub release linked in the website.
-3. Run the desktop companion. Confirm the ULTRON HTTPS website address.
-4. Enable approved PC actions, start the companion and copy the private pairing key.
-5. In ULTRON, open Permissions and pair the local companion using that key.
-6. Grant microphone permission and start wake-word mode. The browser tab / installed PWA must remain open and listening.
+## Permissions and app-close behaviour
+ULTRON starts with its own microphone/location/notification/Bluetooth switches off. On page close, its listening loop, speech output, in-memory pairing token and displayed permission states are cleared. On next open, the user must explicitly turn listening on again.
+Browsers and operating systems retain their own permission grants. A website cannot revoke a saved browser microphone/location/notification grant programmatically or force the browser to show a fresh system prompt on every launch. Users can revoke those grants in browser/site settings.
 
-## Avatar and voice
-The metallic ULTRON-inspired hologram is drawn with Canvas 2D. The jaw animates while speech synthesis is active; shoulders, arms and fingers perform small speaking gestures. This is a lightweight original procedural animation, not a movie asset or a photorealistic rigged 3D film model. Speech voice and exact voice quality depend on the browser and installed system voices.
+## Compatibility and mobile
+- The avatar uses Canvas 2D rather than WebGL to reduce GPU requirements.
+- Auto / Low / High visual quality modes adjust rendering work for the available device.
+- The frontend build is transpiled for Chromium 109 / Edge 109 and Firefox 115-era engines to improve support for legacy browsers. Windows 7 and Python 3.8 are out of security support; compatibility depends on the browser, graphics driver and audio devices.
+- The same PWA has a mobile-specific layout for Android and iOS browsers. Mobile installation provides ULTRON voice/chat; Windows PC actions require the companion running on the Windows computer.
 
-Wake-word listening uses the browser's speech-recognition service. It runs only while ULTRON is open, microphone permission is granted, and the user has explicitly started listening. It is not an OS-level always-on background listener.
-
-## PC controls and safety
-Supported controls include opening selected websites or safe HTTP/HTTPS URLs, launching selected built-in apps, opening standard user folders, reading CPU/RAM/disk/network/battery information and listing Desktop folder names. Many Hindi and English phrasings are mapped through the cloud command planner when GROQ_API_KEY is configured.
-
-Every PC action must be reviewed and approved in the ULTRON UI before execution. Arbitrary shell commands, password access, silent recording, unrestricted file access, deletion/modification of files, purchases, sending messages, shutdown and restart are not available.
-
-The PC companion uses a private random pairing key, exact allowed website origin, and binds only to 127.0.0.1. Never expose port 8765 to the public internet. Browser support for local-network/loopback access varies.
+## Safety
+The companion binds only to `127.0.0.1`, returns its pairing key only to exact allowlisted website origins and supports only a controlled list of actions. Each action still requires in-app confirmation. Arbitrary shell execution, password access, silent recording, destructive file changes, purchases and message sending are not enabled.
 
 ## Render
 Runtime: Python 3.12
-Build: pip install -r cloud-api/requirements.txt
-Start: cd cloud-api && uvicorn main:app --host 0.0.0.0 --port $PORT
-Environment: GROQ_API_KEY (private), GROQ_MODEL=openai/gpt-oss-120b
+Build: `pip install -r cloud-api/requirements.txt`
+Start: `cd cloud-api && uvicorn main:app --host 0.0.0.0 --port $PORT`
+Environment: `GROQ_API_KEY` (private), `GROQ_MODEL=openai/gpt-oss-120b`
 
 ## Vercel
-Framework Vite, build npm run build, output dist.
-VITE_JARVIS_CLOUD_API_URL=https://jarvis-cloud-ai-api.onrender.com
+Framework: Vite
+Build: `npm run build`
+Output: `dist`
+Cloud API URL: `VITE_JARVIS_CLOUD_API_URL=https://jarvis-cloud-ai-api.onrender.com`
+Windows installer: served as a Vercel static asset at `/downloads/ULTRON-Desktop.exe`.

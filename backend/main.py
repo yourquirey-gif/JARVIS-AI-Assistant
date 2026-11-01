@@ -10,7 +10,7 @@ from agent import get_system_info, launch_app, list_desktop_folders, open_websit
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=False)
-app = FastAPI(title="ULTRON Local PC Companion", version="0.2.0")
+app = FastAPI(title="ULTRON Local PC Companion", version="0.3.0")
 DEFAULT_ORIGINS = (
     "https://jarvis-ai-assistant-zeta-six.vercel.app,"
     "https://jarvis-ai-assistant-funwithme759-6091s-projects.vercel.app,"
@@ -22,7 +22,7 @@ app.add_middleware(
     allow_origins=ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Ultron-Token", "X-Jarvis-Token"],
+    allow_headers=["Content-Type", "Accept", "X-Ultron-Token", "X-Jarvis-Token", "Access-Control-Request-Private-Network"],
 )
 TOKEN = os.getenv("ULTRON_TOKEN", os.getenv("JARVIS_TOKEN", ""))
 AUTOMATION = os.getenv("ENABLE_AUTOMATION", "false").lower() in ("1", "true", "yes", "on")
@@ -68,6 +68,25 @@ async def health():
 async def pair(data: PairRequest, request: Request):
     auth(request, data.token)
     return {"paired": True, "automation_enabled": AUTOMATION, "message": "ULTRON local companion paired."}
+
+@app.get("/api/auto-pair")
+async def auto_pair(request: Request):
+    """
+    Return the local pairing token only to an exact website origin explicitly
+    trusted in the desktop companion configuration. CORS is also restricted
+    to that same allowlist; this endpoint is never exposed off-loopback.
+    """
+    origin = request.headers.get("origin", "").rstrip("/")
+    if not origin or origin not in ORIGINS:
+        raise HTTPException(403, "This ULTRON website is not in the PC companion's trusted website list.")
+    if not TOKEN:
+        raise HTTPException(503, "Open ULTRON PC Companion to initialize secure pairing.")
+    return {
+        "paired": True,
+        "token": TOKEN,
+        "automation_enabled": AUTOMATION,
+        "message": "Trusted ULTRON website paired automatically."
+    }
 
 def detect_action(text):
     value = re.sub(r"\s+", " ", text.lower().strip())

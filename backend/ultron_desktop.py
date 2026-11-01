@@ -9,7 +9,7 @@ from urllib.parse import urlparse
 import tkinter as tk
 from tkinter import ttk, messagebox
 
-DEFAULT_SITE = "https://jarvis-ai-assistant-zeta-six.vercel.app"
+DEFAULT_SITE = "https://jarvis-ai-assistant-zeta-six.vercel.app,https://jarvis-ai-assistant-funwithme759-6091s-projects.vercel.app"
 PORT = 8765
 APP_DIR = Path(os.getenv("APPDATA", str(Path.home()))) / "ULTRON"
 APP_DIR.mkdir(parents=True, exist_ok=True)
@@ -36,11 +36,24 @@ def save_config(values):
         encoding="utf-8"
     )
 
-def site_origin(value):
-    parsed = urlparse(value.strip())
-    if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password:
-        raise ValueError("Enter the full HTTPS ULTRON website address.")
-    return "{}://{}".format(parsed.scheme, parsed.netloc)
+def site_origins(value):
+    origins = []
+    for entry in value.split(","):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parsed = urlparse(entry)
+        if parsed.scheme != "https" or not parsed.netloc or parsed.username or parsed.password or parsed.path not in ("", "/") or parsed.query or parsed.fragment:
+            raise ValueError("Enter HTTPS website origins only, separated by commas.")
+        origin = "{}://{}".format(parsed.scheme, parsed.netloc.lower())
+        if origin not in origins:
+            origins.append(origin)
+    if not origins:
+        raise ValueError("Enter at least one HTTPS ULTRON website origin.")
+    return ",".join(origins)
+
+def first_site_origin(value):
+    return site_origins(value).split(",")[0]
 
 class UltronDesktop:
     def __init__(self, root):
@@ -55,7 +68,7 @@ class UltronDesktop:
         self.server = None
         self.server_thread = None
         self.running = False
-        self.site_var = tk.StringVar(value=DEFAULT_SITE)
+        self.site_var = tk.StringVar(value=self.values.get("ALLOWED_ORIGINS", DEFAULT_SITE))
         self.enabled_var = tk.BooleanVar(value=self.values["ENABLE_AUTOMATION"].lower() == "true")
         self.startup_var = tk.BooleanVar(value=(STARTUP_DIR / "ULTRON-Desktop.bat").exists())
         self.status_var = tk.StringVar(value="Companion stopped")
@@ -78,7 +91,7 @@ class UltronDesktop:
                  bg="#071321", fg="#91acc5", font=("Segoe UI", 8)).pack(pady=(0, 18))
         frame = tk.Frame(self.root, bg="#102239", padx=18, pady=16)
         frame.pack(fill="both", expand=True, padx=18, pady=8)
-        tk.Label(frame, text="ULTRON WEBSITE (HTTPS)", bg="#102239", fg="#bcd5e7",
+        tk.Label(frame, text="TRUSTED ULTRON WEBSITE ORIGIN(S) — COMMA SEPARATED", bg="#102239", fg="#bcd5e7",
                  font=("Segoe UI", 9, "bold")).pack(anchor="w")
         tk.Entry(frame, textvariable=self.site_var, bg="#061321", fg="white",
                  insertbackground="white", relief="flat").pack(fill="x", pady=(6, 14), ipady=8)
@@ -86,7 +99,7 @@ class UltronDesktop:
                        variable=self.enabled_var, bg="#102239", fg="#d5e7f4",
                        activebackground="#102239", selectcolor="#12344d",
                        font=("Segoe UI", 9), wraplength=470, justify="left").pack(anchor="w", pady=(0, 14))
-        tk.Label(frame, text="PRIVATE PAIRING KEY", bg="#102239", fg="#bcd5e7",
+        tk.Label(frame, text="PRIVATE PAIRING KEY (MANUAL FALLBACK ONLY)", bg="#102239", fg="#bcd5e7",
                  font=("Segoe UI", 9, "bold")).pack(anchor="w")
         token_row = tk.Frame(frame, bg="#102239")
         token_row.pack(fill="x", pady=(6, 6))
@@ -97,6 +110,7 @@ class UltronDesktop:
         ttk.Button(token_row, text="Copy key", command=self._copy_token).pack(side="left")
         ttk.Button(frame, text="SAVE SETTINGS & START COMPANION", command=self.start_agent).pack(fill="x", pady=(10, 8))
         ttk.Button(frame, text="OPEN ULTRON WEBSITE", command=self.open_site).pack(fill="x", pady=4)
+        ttk.Button(frame, text="MINIMIZE · KEEP PC COMPANION RUNNING", command=self.root.iconify).pack(fill="x", pady=4)
         ttk.Button(frame, text="Create / remove Windows startup shortcut", command=self.toggle_startup).pack(fill="x", pady=4)
         tk.Checkbutton(frame, text="Start this companion when Windows starts",
                        variable=self.startup_var, bg="#102239", fg="#91acc5",
@@ -139,20 +153,20 @@ class UltronDesktop:
 
     def open_site(self):
         try:
-            origin = site_origin(self.site_var.get())
+            origin = first_site_origin(self.site_var.get())
         except ValueError as exc:
             messagebox.showerror("Website address", str(exc))
             return
         webbrowser.open(origin)
-        self.status_var.set("ULTRON website opened. Copy the pairing key into Permissions.")
+        self.status_var.set("ULTRON website opened. The trusted site can auto-pair when the companion is running.")
 
     def start_agent(self):
         try:
-            origin = site_origin(self.site_var.get())
+            origins = site_origins(self.site_var.get())
         except ValueError as exc:
             messagebox.showerror("Website address", str(exc))
             return
-        self.values["ALLOWED_ORIGINS"] = origin
+        self.values["ALLOWED_ORIGINS"] = origins
         self.values["ENABLE_AUTOMATION"] = "true" if self.enabled_var.get() else "false"
         save_config(self.values)
         if self.running:

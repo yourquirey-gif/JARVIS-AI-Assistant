@@ -15,6 +15,8 @@ jobs:
     runs-on: windows-2022
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: "3.8.10"
@@ -26,13 +28,28 @@ jobs:
       - name: Build Windows desktop companion
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name ULTRON-Desktop --paths backend --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all pydantic --collect-all psutil backend/ultron_desktop.py
-      - name: Publish latest desktop executable
+      - name: Publish installer through the Vercel website origin
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
-          gh release view ultron-latest --repo $env:GITHUB_REPOSITORY
+          New-Item -ItemType Directory -Force -Path "public/downloads" | Out-Null
+          Copy-Item "dist/ULTRON-Desktop.exe" "public/downloads/ULTRON-Desktop.exe" -Force
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "public/downloads/ULTRON-Desktop.exe"
+          git diff --cached --quiet
           if ($LASTEXITCODE -ne 0) {
-            gh release create ultron-latest --repo $env:GITHUB_REPOSITORY --title "ULTRON Desktop Companion - Latest" --notes "Latest Windows desktop companion build from the main branch."
+            git commit -m "chore: publish ULTRON Windows companion for Vercel downloads"
+            if ($LASTEXITCODE -ne 0) { throw "Could not commit the ULTRON installer." }
+            git push origin HEAD:main
+            if ($LASTEXITCODE -ne 0) { throw "Could not publish the installer to the main branch." }
+          } else {
+            Write-Host "The Vercel-hosted installer is already up to date."
           }
-          gh release upload ultron-latest dist/ULTRON-Desktop.exe --repo $env:GITHUB_REPOSITORY --clobber
+
+          gh release delete-asset ultron-latest ULTRON-Desktop.exe --yes --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "No legacy GitHub Release installer asset remained to remove."
+          }

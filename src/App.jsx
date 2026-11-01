@@ -8,7 +8,9 @@ import {
 
 const DEFAULT_AGENT = "http://127.0.0.1:8765";
 const CLOUD_API = (import.meta.env.VITE_JARVIS_CLOUD_API_URL || "").replace(/\/$/, "");
-const DESKTOP_RELEASE = "https://github.com/yourquirey-gif/JARVIS-AI-Assistant/releases/download/ultron-latest/ULTRON-Desktop.exe";
+// Same-origin download: custom domains automatically use their own host.
+const DESKTOP_DOWNLOAD = "/downloads/ULTRON-Desktop.exe";
+const IS_MOBILE_DEVICE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
 const ACKNOWLEDGEMENTS = [
   "Understood, sir. Initiating your command now.",
   "Certainly, sir. Executing your request.",
@@ -28,9 +30,8 @@ function chooseAcknowledgement(previous) {
 export default function App() {
   const [agentUrl, setAgentUrl] = useState(DEFAULT_AGENT);
   const [token, setToken] = useState("");
-  const [pairedToken, setPairedToken] = useState(() => {
-    try { return sessionStorage.getItem("ultron-pairing-key") || ""; } catch { return ""; }
-  });
+  // Pairing token is memory-only and is cleared whenever the app is closed.
+  const [pairedToken, setPairedToken] = useState("");
   const [agent, setAgent] = useState("offline");
   const [permissions, setPermissions] = useState({ microphone: false, location: false, notifications: false, bluetooth: false });
   const [showPerms, setShowPerms] = useState(false);
@@ -115,15 +116,41 @@ export default function App() {
   };
 
   const checkAgent = async () => {
+    if (IS_MOBILE_DEVICE) {
+      setAgent("offline");
+      setAutomationEnabled(false);
+      return;
+    }
     try {
-      const response = await fetch(agentUrl.replace(/\/$/, "") + "/api/health", {
+      const base = agentUrl.replace(/\/$/, "");
+      const response = await fetch(base + "/api/health", {
         mode: "cors",
         targetAddressSpace: "loopback"
       });
       if (!response.ok) throw new Error("Companion unavailable");
-      const data = await response.json();
-      setAgent(pairedToken ? (data.automation_enabled ? "paired" : "disabled") : "available");
-      setAutomationEnabled(Boolean(data.automation_enabled));
+      const health = await response.json();
+
+      // The companion returns a private pairing token only to exact trusted origins.
+      // The browser still enforces its local-network permission and the companion
+      // remains bound to 127.0.0.1.
+      let activeToken = pairedToken;
+      if (!activeToken) {
+        const pairingResponse = await fetch(base + "/api/auto-pair", {
+          mode: "cors",
+          targetAddressSpace: "loopback",
+          headers: { "Accept": "application/json" }
+        });
+        if (pairingResponse.ok) {
+          const pairing = await pairingResponse.json();
+          if (pairing.paired && pairing.token) {
+            activeToken = pairing.token;
+            setPairedToken(activeToken);
+            add("system", "ULTRON connected to the Windows PC companion automatically.");
+          }
+        }
+      }
+      setAgent(activeToken ? (health.automation_enabled ? "paired" : "disabled") : "available");
+      setAutomationEnabled(Boolean(health.automation_enabled));
     } catch {
       setAgent("offline");
       setAutomationEnabled(false);
@@ -143,7 +170,6 @@ export default function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Pairing failed");
       setPairedToken(token);
-      try { sessionStorage.setItem("ultron-pairing-key", token); } catch {}
       setToken("");
       setAgent(data.automation_enabled ? "paired" : "disabled");
       setAutomationEnabled(Boolean(data.automation_enabled));
@@ -303,6 +329,31 @@ export default function App() {
     const interval = window.setInterval(checkAgent, 15000);
     return () => window.clearInterval(interval);
   }, [agentUrl, pairedToken]);
+
+  useEffect(() => {
+    const resetOnClose = () => {
+      listeningRef.current = false;
+      armedRef.current = false;
+      if (restartTimer.current) window.clearTimeout(restartTimer.current);
+      try { rec.current?.stop(); } catch {}
+      try { window.speechSynthesis?.cancel(); } catch {}
+      try { sessionStorage.removeItem("ultron-pairing-key"); } catch {}
+      setListening(false);
+      setArmState(false);
+      setSpeaking(false);
+      setPairedToken("");
+      setPermissions({ microphone: false, location: false, notifications: false, bluetooth: false });
+      setLocation("Not shared");
+      setSystem(null);
+      setStatus("STANDBY");
+    };
+    window.addEventListener("pagehide", resetOnClose);
+    window.addEventListener("beforeunload", resetOnClose);
+    return () => {
+      window.removeEventListener("pagehide", resetOnClose);
+      window.removeEventListener("beforeunload", resetOnClose);
+    };
+  }, []);
 
   useEffect(() => {
     logEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -492,7 +543,7 @@ export default function App() {
           <span className="brandIcon"><AudioLines /></span>
           <div><b>ULTRON</b><small>PERSONAL INTELLIGENCE SYSTEM</small></div>
         </div>
-        <div className="state"><i className={agent === "paired" ? "online" : ""} />{statusAgent}</div>
+        <div className="state"><i className={agent === "paired" ? "online" : ""} />{IS_MOBILE_DEVICE ? "MOBILE MODE" : statusAgent}</div>
         <div className="actions">
           <button onClick={checkAgent} title="Check companion"><RefreshCw /></button>
           <button onClick={() => setShowPerms(true)} title="Permissions"><ShieldCheck /></button>
@@ -503,11 +554,11 @@ export default function App() {
         <section className="installBanner">
           <div className="installIcon"><Download /></div>
           <div className="installCopy">
-            <b>Install ULTRON on this device</b>
-            <span>Add the app to your desktop for a cleaner, app-like experience. PC control needs the separate desktop companion.</span>
+            <b>{IS_MOBILE_DEVICE ? "Install ULTRON on your phone" : "Install ULTRON on your Windows PC"}</b>
+            <span>{IS_MOBILE_DEVICE ? "Add ULTRON to your home screen for quick voice and AI access." : "Install ULTRON as a desktop app. PC control connects to the local companion."}</span>
           </div>
           <button className="primaryButton" onClick={installApp}>{installPrompt ? "INSTALL APP" : "HOW TO INSTALL"}</button>
-          <a href={DESKTOP_RELEASE} className="subtleLink" target="_blank" rel="noreferrer">PC companion</a>
+          {!IS_MOBILE_DEVICE && <a href={DESKTOP_DOWNLOAD} className="subtleLink">PC companion</a>}
           <button className="iconButton" onClick={dismissInstall} aria-label="Dismiss install prompt"><X /></button>
         </section>
       )}
@@ -515,9 +566,9 @@ export default function App() {
         <div className="veil" onClick={() => setInstallHelp(false)}>
           <section className="modal panel installHelp" onClick={(event) => event.stopPropagation()}>
             <h3>INSTALL ULTRON <button onClick={() => setInstallHelp(false)}><X /></button></h3>
-            <p>In Chrome or Edge, open the browser menu and choose “Install ULTRON” or “Apps → Install this site as an app”. The option appears only in browsers that support PWA installation.</p>
-            <p>For local computer controls, also install the Windows PC companion from the button below, run it, and pair it from Permissions.</p>
-            <a className="primaryButton linkButton" href={DESKTOP_RELEASE} target="_blank" rel="noreferrer"><Download /> DOWNLOAD WINDOWS COMPANION</a>
+            <p>{IS_MOBILE_DEVICE ? "On Android, open the browser menu and choose “Install app” or “Add to Home screen”. On iPhone, use Share → Add to Home Screen. The installed ULTRON app gives you the mobile-friendly voice and AI interface." : "In Chrome or Edge, open the browser menu and choose “Install ULTRON” or “Apps → Install this site as an app”."}</p>
+            {!IS_MOBILE_DEVICE && <p>For Windows PC controls, install the companion below and keep it running. ULTRON will detect and pair with it automatically when this trusted website opens.</p>}
+            {!IS_MOBILE_DEVICE && <a className="primaryButton linkButton" href={DESKTOP_DOWNLOAD}><Download /> DOWNLOAD WINDOWS COMPANION</a>}
             <button className="secondaryButton" onClick={() => setInstallHelp(false)}>CLOSE</button>
           </section>
         </div>
@@ -689,14 +740,26 @@ export default function App() {
           </section>
 
           <section className="hudPanel shortcutsPanel">
-            <h3><span>QUICK COMMANDS</span><Power /></h3>
+            <h3><span>{IS_MOBILE_DEVICE ? "QUICK AI ACTIONS" : "QUICK COMMANDS"}</span><Power /></h3>
             <div className="shortcutGrid">
-              <button onClick={() => sendCommand("show my PC system information")}><Activity /><span>System<br/>Info</span></button>
-              <button onClick={() => sendCommand("open calculator")}><Monitor /><span>Calculator</span></button>
-              <button onClick={() => sendCommand("open YouTube")}><Globe /><span>Open<br/>YouTube</span></button>
-              <button onClick={() => sendCommand("show desktop folders")}><Terminal /><span>Desktop<br/>Files</span></button>
+              {IS_MOBILE_DEVICE ? (
+                <>
+                  <button onClick={() => sendCommand("Explain artificial intelligence in simple Hindi")}><Bot /><span>Explain<br/>AI</span></button>
+                  <button onClick={() => sendCommand("Help me plan my day")}><Activity /><span>Plan<br/>Day</span></button>
+                  <button onClick={() => sendCommand("Tell me one interesting science fact")}><Globe /><span>Science<br/>Fact</span></button>
+                  <button onClick={() => { setShowPerms(true); }}><ShieldCheck /><span>App<br/>Access</span></button>
+                </>
+              ) : (
+                <>
+                  <button onClick={() => sendCommand("show my PC system information")}><Activity /><span>System<br/>Info</span></button>
+                  <button onClick={() => sendCommand("open calculator")}><Monitor /><span>Calculator</span></button>
+                  <button onClick={() => sendCommand("open YouTube")}><Globe /><span>Open<br/>YouTube</span></button>
+                  <button onClick={() => sendCommand("show desktop folders")}><Terminal /><span>Desktop<br/>Files</span></button>
+                </>
+              )}
             </div>
-            <a className="downloadLink" href={DESKTOP_RELEASE} target="_blank" rel="noreferrer"><Download /> WINDOWS COMPANION</a>
+            {!IS_MOBILE_DEVICE && <a className="downloadLink" href={DESKTOP_DOWNLOAD}><Download /> WINDOWS COMPANION</a>}
+            {IS_MOBILE_DEVICE && <p className="mobileHint">MOBILE MODE · Install ULTRON on your home screen for voice and AI access. Windows PC actions run from the ULTRON app on the computer.</p>}
           </section>
         </aside>
       </section>
@@ -714,21 +777,28 @@ export default function App() {
             <div className="permission"><MapPin /><div><b>Location</b><small>Only used when you request a location feature</small></div><button onClick={grantLocation}>{permissions.location ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><Bell /><div><b>Notifications</b><small>Optional ULTRON alerts</small></div><button onClick={grantNotifications}>{permissions.notifications ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><Bluetooth /><div><b>Bluetooth</b><small>Optional browser device chooser where supported</small></div><button onClick={grantBluetooth}>{permissions.bluetooth ? "GRANTED" : "ALLOW"}</button></div>
-            <div className="permission"><Monitor /><div><b>Windows PC companion</b><small>Runs locally and keeps PC actions on your own computer</small></div><a href={DESKTOP_RELEASE} target="_blank" rel="noreferrer">DOWNLOAD</a></div>
+            {!IS_MOBILE_DEVICE && <div className="permission"><Monitor /><div><b>Windows PC companion</b><small>Runs locally and keeps PC actions on your own computer</small></div><a href={DESKTOP_DOWNLOAD}>DOWNLOAD</a></div>}
             <div className="pair" id="agent-connect">
-              <b>PAIR YOUR WINDOWS PC</b>
-              <small>1. Run ULTRON PC Companion. 2. Enable PC actions and press Copy key. 3. Paste the key below.</small>
-              <input value={agentUrl} onChange={(event) => setAgentUrl(event.target.value)} placeholder="http://127.0.0.1:8765" />
-              <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Paste private pairing key from desktop app" />
-              <button disabled={!token.trim()} onClick={connect}>CONNECT LOCAL COMPANION</button>
-              {pairedToken && <small>Paired for this browser session. The companion must remain running.</small>}
-              {agent === "disabled" && <small className="warningText">PC actions are disabled in the desktop companion. Enable them there and restart it.</small>}
+              <b>{IS_MOBILE_DEVICE ? "WINDOWS PC CONTROL" : "AUTOMATIC PC CONNECTION"}</b>
+              <small>{IS_MOBILE_DEVICE ? "PC control is available when ULTRON is opened on the Windows computer with its companion running." : "Keep ULTRON PC Companion running on this computer. The trusted ULTRON website will discover it and pair automatically—no key copy/paste."}</small>
+              <div className="pairStatus">
+                <i className={agent === "paired" ? "connected" : ""} />
+                <span>{agent === "paired" ? "PC CONNECTED" : agent === "disabled" ? "PC ACTIONS DISABLED" : agent === "available" ? "COMPANION FOUND · WAITING FOR TRUSTED PAIR" : "LOOKING FOR WINDOWS COMPANION"}</span>
+              </div>
+              {!IS_MOBILE_DEVICE && <button onClick={checkAgent}><RefreshCw /> FIND MY PC AUTOMATICALLY</button>}
+              {agent === "disabled" && <small className="warningText">Enable approved PC actions inside the Windows companion and restart it.</small>}
+              <details className="manualPair">
+                <summary>Advanced connection settings</summary>
+                <input value={agentUrl} onChange={(event) => setAgentUrl(event.target.value)} placeholder="http://127.0.0.1:8765" />
+                <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Optional manual pairing key" />
+                <button disabled={!token.trim()} onClick={connect}>MANUAL CONNECT</button>
+              </details>
             </div>
             <div className="modalActions">
-              <a className="secondaryButton" href={DESKTOP_RELEASE} target="_blank" rel="noreferrer"><Download /> GET WINDOWS APP</a>
-              <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK COMPANION</button>
+              {!IS_MOBILE_DEVICE && <a className="secondaryButton" href={DESKTOP_DOWNLOAD}><Download /> GET WINDOWS APP</a>}
+              <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>
             </div>
-            <p className="privacy"><ShieldCheck /> Each PC action asks for confirmation. Browser permissions never grant unrestricted Windows access.</p>
+            <p className="privacy"><ShieldCheck /> ULTRON resets its own permission switches and pairing session when closed. Browser and Windows permissions may remain saved until you revoke them in browser settings. Every PC action still asks for confirmation.</p>
           </section>
         </div>
       )}
