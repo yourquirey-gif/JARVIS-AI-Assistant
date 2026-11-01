@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.2",
   "download": "/downloads/ULTRON-Android.apk",
-  "releaseNotes": "Android native app update."
+  "releaseNotes": "Android voice assistant update with native quick-launch shortcuts for selected apps. Install via Android confirmation."
 }
