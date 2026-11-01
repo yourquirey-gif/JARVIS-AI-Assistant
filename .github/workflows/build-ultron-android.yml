@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ultron-installer-publish
+  group: ultron-android-publish
   cancel-in-progress: false
 
 jobs:
@@ -68,7 +68,17 @@ jobs:
           cp android/app/build/outputs/apk/debug/app-debug.apk public/downloads/ULTRON-Android.apk
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main
           git add public/downloads/ULTRON-Android.apk
           git commit -m "chore: publish ULTRON Android APK for Vercel"
-          git push origin HEAD:main
+          for attempt in 1 2 3 4 5; do
+            git pull --rebase origin main
+            if [ $? -ne 0 ]; then
+              git rebase --abort || true
+              echo "Could not rebase APK publish commit onto main."
+              exit 1
+            fi
+            git push origin HEAD:main && exit 0
+            sleep 3
+          done
+          echo "Could not push APK after five retries."
+          exit 1
