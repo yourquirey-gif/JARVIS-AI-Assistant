@@ -6,6 +6,7 @@ on:
       - "backend/**"
       - "desktop/**"
       - "src/**"
+      - "scripts/**"
       - "package.json"
       - "vite.config.js"
       - ".github/workflows/build-ultron-windows.yml"
