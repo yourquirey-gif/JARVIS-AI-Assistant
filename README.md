@@ -1,42 +1,41 @@
 # JARVIS AI Assistant
 
-React voice dashboard + a local Python companion that can perform explicitly approved actions on your own PC.
+A voice-first personal assistant with three parts:
 
-## How permissions work
+1. **Vercel website** — React dashboard, voice orb, speech transcript, permission center and chat.
+2. **Render Cloud AI API** — general AI conversation only. It has no access to your PC.
+3. **Local Python agent** — runs on your Windows PC and performs the small allowlisted desktop actions you approve.
+
+## Important permission model
 - Microphone, location, notifications and (where supported) Bluetooth are requested separately, only after you press their buttons.
 - The website cannot obtain unrestricted access to your computer just because you click Allow.
 - PC actions require the local agent on your PC, a pairing token, an enabled capability and confirmation for each action.
-- The initial agent only supports an allowlist: opening approved websites, launching selected Windows apps, reading basic system/battery information, and listing Desktop folder names after confirmation.
-- Arbitrary shell commands, password access, silent recording, bulk file access and destructive actions are intentionally excluded.
+- Initial PC allowlist: opening approved websites, launching selected Windows apps, reading basic system/battery information, and listing Desktop folder names.
+- Arbitrary shell execution, password access, silent recording, bulk file access and destructive actions are intentionally excluded.
 - Browser tab control needs a separately installed browser extension; a normal website cannot freely close arbitrary tabs.
+- Keep Render's GROQ_API_KEY in Render environment variables. Never put it in Vercel frontend variables or GitHub.
 
-## Architecture
-- src/: React UI, voice orb, speech transcript, conversation and permission center.
-- backend/: local FastAPI agent. Runs on the PC, bound to 127.0.0.1 only.
-- Keep AI keys and the pairing secret in the local agent's .env; never put them in Vercel frontend variables.
+## Deployment
+### Render Cloud API
+- Runtime: Python
+- Build command: `pip install -r cloud-api/requirements.txt`
+- Start command: `cd cloud-api && uvicorn main:app --host 0.0.0.0 --port $PORT`
+- Env: `GROQ_API_KEY` (set privately), `GROQ_MODEL=openai/gpt-oss-120b`
 
-## Local PC setup
-For Windows 7, use Python 3.8 (legacy/EOL) only as a compatibility bridge. It is not a secure, supported long-term platform.
+### Vercel frontend
+- Framework preset: Vite
+- Build command: `npm run build`
+- Output directory: `dist`
+- Environment variable: `VITE_JARVIS_CLOUD_API_URL=https://YOUR-RENDER-SERVICE.onrender.com`
 
-1. Install Python 3.8.10 64-bit.
-2. Open Command Prompt in backend.
-3. Create and activate a virtual environment:
-   python -m venv venv
-   venv\Scripts\activate
-   pip install -r requirements.txt
-4. Copy .env.example to .env. Generate a private token:
-   python -c "import secrets; print(secrets.token_urlsafe(32))"
-   Put the output in JARVIS_TOKEN. Add your exact deployed website origin to ALLOWED_ORIGINS.
-5. Optional: add your Groq key to GROQ_API_KEY.
-6. Start the local agent:
-   python -m uvicorn main:app --host 127.0.0.1 --port 8765
-7. Open the JARVIS website over HTTPS, go to Local Agent, enter the token and connect.
+### Local PC agent (not Render)
+For Windows 7 use Python 3.8.10 64-bit only as a legacy bridge. Windows 7 and Python 3.8 are no longer supported for security updates. Upgrade to a supported Windows version when possible.
+1. Open `backend/` and run `install.bat`.
+2. Edit `backend/.env`: create a long random `JARVIS_TOKEN`, set `ALLOWED_ORIGINS` to your exact Vercel HTTPS URL, and review `ENABLE_AUTOMATION`.
+3. Run `start.bat` and keep the terminal open.
+4. On the website, open Permissions, enter the pairing token and connect the local agent.
 
-Do not expose port 8765 to the internet or bind the agent to 0.0.0.0.
+Never expose the local agent port publicly or bind it to 0.0.0.0.
 
-## Frontend
-   npm install
-   npm run dev
-
-## Current implementation status
-This is an initial scaffold, not a finished production assistant. Voice support depends on browser APIs; local actions require manual pairing and per-action approval. More advanced speech/TTS, full tool-calling, browser extension, persistent orb layout and automated tests remain roadmap items.
+## Current status
+This is an initial foundation and still needs integration tests, a robust pairing flow, advanced bilingual speech recognition/TTS, browser extension for tab management, and more local action handlers. Do not treat it as production-ready until these are implemented and tested.
