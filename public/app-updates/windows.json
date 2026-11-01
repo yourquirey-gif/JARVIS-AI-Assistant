@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "download": "/downloads/ULTRON-Windows-Setup.exe",
-  "releaseNotes": "Windows 1.0.3: Glass Wave Blob, automatic update checks, separate PC/microphone consent and Revoke All access. Download and run the installer to update."
+  "releaseNotes": "Windows 1.0.2: Glass Wave Blob, update notifications and unified permission controls. Close ULTRON and run the installer."
 }
