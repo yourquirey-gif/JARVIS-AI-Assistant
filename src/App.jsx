@@ -99,6 +99,15 @@ export default function App() {
   const setPerm = (key, value) => setPermissions((p) => ({ ...p, [key]: value }));
   const add = (role, text) => setMessages((m) => [...m, { role, text, time: new Date().toLocaleTimeString() }]);
 
+  // Android speech-recognition 7.0.1 can stop listening but leave its stop()
+  // promise pending. Never await it on the command path.
+  const stopAndroidRecognition = () => {
+    try {
+      const pendingStop = SpeechRecognition.stop();
+      if (pendingStop && typeof pendingStop.catch === "function") pendingStop.catch(() => {});
+    } catch {}
+  };
+
   const checkAppUpdate = async () => {
     setCheckingUpdate(true);
     const platform = IS_NATIVE_ANDROID ? "android" : IS_NATIVE_DESKTOP ? "windows" : "web";
@@ -168,9 +177,7 @@ export default function App() {
     armedRef.current = false;
     if (restartTimer.current) window.clearTimeout(restartTimer.current);
     try { rec.current?.stop(); } catch {}
-    if (IS_NATIVE_ANDROID) {
-      try { await SpeechRecognition.stop(); } catch {}
-    }
+    if (IS_NATIVE_ANDROID) stopAndroidRecognition();
     try { window.speechSynthesis?.cancel(); } catch {}
     if (IS_NATIVE_ANDROID) { try { await TextToSpeech.stop(); } catch {} }
     setListening(false);
@@ -521,13 +528,11 @@ export default function App() {
         setListening(false);
         setArmState(false);
         setStatus("THINKING");
-        if (IS_NATIVE_ANDROID) { try { await SpeechRecognition.stop(); } catch {} }
-        else { try { rec.current?.stop(); } catch {} }
+        if (!IS_NATIVE_ANDROID) { try { rec.current?.stop(); } catch {} }
         await sendCommand(remaining);
       } else {
         setArmState(true);
         setStatus("WAKE WORD HEARD · SAY COMMAND");
-        if (IS_NATIVE_ANDROID) { try { await SpeechRecognition.stop(); } catch {} }
         const greeting = lang.startsWith("hi")
           ? "जी, मैं सुन रहा हूँ। बताइए क्या करना है?"
           : "I'm listening. What would you like me to do?";
@@ -544,8 +549,7 @@ export default function App() {
       setListening(false);
       setArmState(false);
       setStatus("THINKING");
-      if (IS_NATIVE_ANDROID) { try { await SpeechRecognition.stop(); } catch {} }
-      else { try { rec.current?.stop(); } catch {} }
+      if (!IS_NATIVE_ANDROID) { try { rec.current?.stop(); } catch {} }
       await sendCommand(phrase);
     }
   };
@@ -834,7 +838,7 @@ export default function App() {
       if (listeningRef.current) setError(e?.message || "Android speech recognition stopped.");
     } finally {
       nativeRecognitionRunning.current = false;
-      try { await SpeechRecognition.stop(); } catch {}
+      // Recognition resolves with a final result before this loop exits.
     }
   };
 
@@ -850,7 +854,7 @@ export default function App() {
       setArmState(false);
       setStatus("STANDBY");
       if (IS_NATIVE_ANDROID) {
-        try { await SpeechRecognition.stop(); } catch {}
+        stopAndroidRecognition();
       } else {
         try { rec.current?.stop(); } catch {}
       }
