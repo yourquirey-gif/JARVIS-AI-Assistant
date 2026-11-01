@@ -384,3 +384,28 @@ a{color:inherit;text-decoration:none}
 .revokeAllButton{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:39px;margin-top:12px;border:1px solid rgba(255,112,126,.42);border-radius:7px;background:rgba(86,25,37,.42);color:#ffc1c7;font-size:9px;font-weight:800;letter-spacing:.6px}
 .revokeAllButton svg{width:15px;height:15px}
 .revokeAllButton:hover{background:rgba(115,33,47,.6);border-color:#ff8793}
+
+
+/* Android-only, user-triggered native app launcher. */
+.androidAppControls{margin:11px 0;padding:11px;background:rgba(3,15,31,.58);border:1px solid rgba(100,186,228,.19);border-radius:8px}
+.androidAppGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px}
+.androidAppGrid button{min-width:0;min-height:67px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;padding:8px 4px;border:1px solid rgba(104,190,235,.19);border-radius:7px;background:linear-gradient(145deg,rgba(13,47,72,.9),rgba(5,22,41,.95));color:#c7e8f7}
+.androidAppGrid button:disabled{opacity:.55}
+.androidAppGrid button:active{background:#164765;border-color:#64ddf7}
+.androidAppGrid svg{width:18px;height:18px;color:#72dcf7}
+.androidAppGrid span{font-size:8px;letter-spacing:.3px;text-align:center}
+.androidAppGrid small{font-size:6px;color:#6ee4c2}
+.androidCustomLaunch{margin-top:10px;border-top:1px solid rgba(112,184,221,.13);padding-top:9px}
+.androidCustomLaunch summary{font-size:8px;color:#85d8ee;cursor:pointer}
+.androidCustomLaunch>div{display:flex;gap:6px;margin-top:8px}
+.androidCustomLaunch input{flex:1;min-width:0;background:#061426;border:1px solid rgba(112,184,221,.24);border-radius:5px;padding:8px;color:#d8edf7;font:9px Consolas,monospace}
+.androidCustomLaunch button{display:flex;align-items:center;gap:5px;padding:7px 10px;border:1px solid #347e9b;border-radius:5px;background:#0d3049;color:#a8ebfa;font-size:8px;font-weight:700}
+.androidCustomLaunch button:disabled{opacity:.4}
+.androidCustomLaunch button svg{width:13px;height:13px}
+.androidAppStatus{margin:8px 0 0;color:#96dcef;font-size:8px;line-height:1.5}
+.androidAppHint{margin:8px 0 0;color:#738fa5;font-size:8px;line-height:1.5}
+@media(max-width:390px){
+ .androidAppGrid{gap:5px}
+ .androidAppGrid button{min-height:61px}
+ .androidAppGrid span{font-size:7px}
+}
