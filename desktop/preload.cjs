@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld("ultronDesktop", Object.freeze({
   revokePcAccess: () => ipcRenderer.invoke("ultron:revoke-pc-access"),
   getMicrophoneStatus: () => ipcRenderer.invoke("ultron:mic-status"),
   requestMicrophone: () => ipcRenderer.invoke("ultron:request-microphone"),
+  getVersion: () => ipcRenderer.invoke("ultron:version"),
+  revokeAllPermissions: () => ipcRenderer.invoke("ultron:revoke-all"),
   onPcStatus: (callback) => {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, value) => callback(value);
