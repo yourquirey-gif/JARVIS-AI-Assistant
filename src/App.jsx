@@ -1057,8 +1057,8 @@ export default function App() {
             <div className="permission"><MapPin /><div><b>Location</b><small>Only used when you request a location feature</small></div><button onClick={grantLocation}>{permissions.location ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><Bell /><div><b>Notifications</b><small>Optional ULTRON alerts</small></div><button onClick={grantNotifications}>{permissions.notifications ? "GRANTED" : "ALLOW"}</button></div>
             {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <div className="permission"><Monitor /><div><b>Windows desktop app</b><small>Dedicated app with local PC Allow/Deny connection</small></div><a href={WINDOWS_DOWNLOAD}>DOWNLOAD</a></div>}
-            <div className="pair" id="agent-connect">
-              <b>{IS_MOBILE_DEVICE ? "WINDOWS PC CONTROL" : IS_NATIVE_DESKTOP ? "DESKTOP PC CONNECTION" : "AUTOMATIC PC CONNECTION"}</b>
+            {!IS_MOBILE_DEVICE && <div className="pair" id="agent-connect">
+              <b>{IS_NATIVE_DESKTOP ? "DESKTOP PC CONNECTION" : "AUTOMATIC PC CONNECTION"}</b>
               <small>{IS_MOBILE_DEVICE ? "PC control runs from ULTRON on your Windows computer. The Android app controls this phone's own voice and AI interface." : IS_NATIVE_DESKTOP ? "Allow starts the private local service and automatically pairs ULTRON. Deny leaves PC control off. Closing the desktop app stops its service." : "The native Windows app connects automatically after you allow PC access."}</small>
               <div className="pairStatus">
                 <i className={agent === "paired" ? "connected" : ""} />
@@ -1073,7 +1073,18 @@ export default function App() {
                 <input type="password" value={token} onChange={(event) => setToken(event.target.value)} placeholder="Optional manual pairing key" />
                 <button disabled={!token.trim()} onClick={connect}>MANUAL CONNECT</button>
               </details>
-            </div>
+            </div>}
+            {IS_MOBILE_DEVICE && (
+              <div className="pair" id="phone-control">
+                <b>{IS_NATIVE_ANDROID ? "ANDROID PHONE CONTROL" : "MOBILE WEB / PWA"}</b>
+                <small>{IS_NATIVE_ANDROID
+                  ? "Native Android speech recognition and voice output are available in this APK. Cross-app launch, screen reading and typing controls are not enabled in this build; they will require a separate, opt-in Android automation permission and per-action confirmation."
+                  : "This screen is running in the mobile browser, not inside the native Android APK. Browser/PWA mode cannot launch or type inside other phone apps. Install the Android APK for native speech recognition."}</small>
+                {IS_NATIVE_ANDROID
+                  ? <div className="pairStatus"><i className={permissions.microphone ? "connected" : ""} /><span>{permissions.microphone ? "MICROPHONE CONSENT ENABLED" : "MICROPHONE CONSENT NOT ENABLED"}</span></div>
+                  : <a className="secondaryButton" href={ANDROID_DOWNLOAD}><Download /> GET ANDROID APP</a>}
+              </div>
+            )}
             <div className="modalActions">
               {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <a className="secondaryButton" href={WINDOWS_DOWNLOAD}><Download /> GET WINDOWS APP</a>}
               <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>
