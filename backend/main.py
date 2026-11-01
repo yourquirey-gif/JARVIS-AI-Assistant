@@ -16,7 +16,7 @@ app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_credentials=Fals
                    allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "X-Jarvis-Token"])
 TOKEN = os.getenv("JARVIS_TOKEN", "")
 GROQ_KEY = os.getenv("GROQ_API_KEY", "")
-MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 AUTOMATION = os.getenv("ENABLE_AUTOMATION", "false").lower() == "true"
 
 class PairRequest(BaseModel):
