@@ -3,7 +3,7 @@ import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import UltronStage from "./UltronStage.jsx";
 import {
-  Activity, AudioLines, Bot, Bell, Bluetooth, ExternalLink, MapPin, Mic, MicOff,
+  Activity, AudioLines, Bot, Bell, ExternalLink, MapPin, Mic, MicOff,
   Monitor, RefreshCw, Send, ShieldCheck, Terminal, Volume2, VolumeX, X,
   Download, Copy, Power, CheckCircle2, AlertTriangle, Smartphone, Globe
 } from "lucide-react";
@@ -13,6 +13,8 @@ const CLOUD_API = (import.meta.env.VITE_JARVIS_CLOUD_API_URL || "").replace(/\/$
 // Same-origin download: custom domains automatically use their own host.
 const WINDOWS_DOWNLOAD = "/downloads/ULTRON-Windows-Setup.exe";
 const ANDROID_DOWNLOAD = "/downloads/ULTRON-Android.apk";
+const UPDATE_ORIGIN = "https://jarvis-ai-assistant-zeta-six.vercel.app";
+const APP_VERSION = __ULTRON_VERSION__;
 const IS_NATIVE_ANDROID = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
 const IS_MOBILE_DEVICE = IS_NATIVE_ANDROID || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
 const IS_NATIVE_DESKTOP = typeof window !== "undefined" && Boolean(window.ultronDesktop?.isNativeDesktop);
@@ -32,13 +34,23 @@ function chooseAcknowledgement(previous) {
   return choices[Math.floor(Math.random() * choices.length)] || ACKNOWLEDGEMENTS[0];
 }
 
+function compareVersions(left, right) {
+  const a = String(left || "0").split(".").map((part) => Number.parseInt(part, 10) || 0);
+  const b = String(right || "0").split(".").map((part) => Number.parseInt(part, 10) || 0);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    const difference = (a[index] || 0) - (b[index] || 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
 export default function App() {
   const [agentUrl, setAgentUrl] = useState(DEFAULT_AGENT);
   const [token, setToken] = useState("");
   // Pairing token is memory-only and is cleared whenever the app is closed.
   const [pairedToken, setPairedToken] = useState("");
   const [agent, setAgent] = useState("offline");
-  const [permissions, setPermissions] = useState({ microphone: false, location: false, notifications: false, bluetooth: false });
+  const [permissions, setPermissions] = useState({ microphone: false, location: false, notifications: false });
   const [showPerms, setShowPerms] = useState(false);
   const [showDownloads, setShowDownloads] = useState(false);
   const [downloadPlatform, setDownloadPlatform] = useState("");
@@ -63,6 +75,8 @@ export default function App() {
   const [installPrompt, setInstallPrompt] = useState(null);
   const [showInstall, setShowInstall] = useState(false);
   const [installHelp, setInstallHelp] = useState(false);
+  const [appUpdate, setAppUpdate] = useState(null);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
   const rec = useRef(null);
   const logEnd = useRef(null);
   const listeningRef = useRef(false);
@@ -78,6 +92,67 @@ export default function App() {
   };
   const setPerm = (key, value) => setPermissions((p) => ({ ...p, [key]: value }));
   const add = (role, text) => setMessages((m) => [...m, { role, text, time: new Date().toLocaleTimeString() }]);
+
+  const checkAppUpdate = async () => {
+    setCheckingUpdate(true);
+    const platform = IS_NATIVE_ANDROID ? "android" : IS_NATIVE_DESKTOP ? "windows" : "web";
+    const base = IS_NATIVE_ANDROID ? UPDATE_ORIGIN : window.location.origin;
+    try {
+      const response = await fetch(`${base}/app-updates/${platform}.json?check=${Date.now()}`, {
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
+      });
+      if (!response.ok) throw new Error("Update information is not available.");
+      const release = await response.json();
+      const installedVersion = IS_NATIVE_DESKTOP && window.ultronDesktop?.getVersion
+        ? await window.ultronDesktop.getVersion()
+        : APP_VERSION;
+      if (release?.version && compareVersions(release.version, installedVersion) > 0) {
+        setAppUpdate({ ...release, platform, installedVersion });
+      } else {
+        setAppUpdate(null);
+      }
+    } catch {
+      // An offline update service must never block the assistant.
+    } finally {
+      setCheckingUpdate(false);
+    }
+  };
+
+  const applyAppUpdate = () => {
+    if (!appUpdate) return;
+    if (appUpdate.platform === "web") {
+      window.location.reload();
+      return;
+    }
+    const base = appUpdate.platform === "android" ? UPDATE_ORIGIN : window.location.origin;
+    const url = new URL(appUpdate.download || (appUpdate.platform === "android" ? ANDROID_DOWNLOAD : WINDOWS_DOWNLOAD), base);
+    window.open(url.toString(), "_blank", "noopener,noreferrer");
+  };
+
+  const revokeAllPermissions = async () => {
+    listeningRef.current = false;
+    armedRef.current = false;
+    if (restartTimer.current) window.clearTimeout(restartTimer.current);
+    try { rec.current?.stop(); } catch {}
+    if (IS_NATIVE_ANDROID) {
+      try { await SpeechRecognition.stop(); } catch {}
+    }
+    try { window.speechSynthesis?.cancel(); } catch {}
+    setListening(false);
+    setArmState(false);
+    setSpeaking(false);
+    setPairedToken("");
+    setAgent("offline");
+    setAutomationEnabled(false);
+    setPermissions({ microphone: false, location: false, notifications: false });
+    setLocation("Not shared");
+    if (IS_NATIVE_DESKTOP && window.ultronDesktop?.revokeAllPermissions) {
+      try { await window.ultronDesktop.revokeAllPermissions(); } catch {}
+    }
+    setError("");
+    add("system", "ULTRON access revoked: active listening stopped, app permissions cleared, and local PC pairing disconnected.");
+  };
 
   const speak = (text) => {
     if (!("speechSynthesis" in window) || !text) return;
@@ -429,7 +504,7 @@ export default function App() {
       setArmState(false);
       setSpeaking(false);
       setPairedToken("");
-      setPermissions({ microphone: false, location: false, notifications: false, bluetooth: false });
+      setPermissions({ microphone: false, location: false, notifications: false });
       setLocation("Not shared");
       setSystem(null);
       setStatus("STANDBY");
@@ -447,8 +522,13 @@ export default function App() {
   }, [messages, pending]);
 
   useEffect(() => {
+    checkAppUpdate();
+    const interval = window.setInterval(checkAppUpdate, 5 * 60 * 1000);
+    window.addEventListener("focus", checkAppUpdate);
     if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      navigator.serviceWorker.register("/sw.js").then((registration) => {
+        registration.update().catch(() => {});
+      }).catch(() => {});
     }
     const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
     if (!standalone) {
@@ -461,6 +541,14 @@ export default function App() {
       }, 1800);
       return () => window.clearTimeout(timer);
     }
+    return undefined;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", checkAppUpdate);
+    };
   }, []);
 
   useEffect(() => {
@@ -586,16 +674,6 @@ export default function App() {
     setPerm("notifications", permission === "granted");
     if (permission === "granted") new Notification("ULTRON", { body: "Notifications enabled, sir." });
   };
-  const grantBluetooth = async () => {
-    try {
-      if (!navigator.bluetooth) throw new Error("Web Bluetooth is not supported by this browser.");
-      await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
-      setPerm("bluetooth", true);
-    } catch (e) {
-      setError(e.message || "Bluetooth permission was not granted.");
-    }
-  };
-
   const startAndroidRecognition = async () => {
     if (nativeRecognitionRunning.current) return;
     nativeRecognitionRunning.current = true;
@@ -694,6 +772,22 @@ export default function App() {
           <button onClick={() => setShowPerms(true)} title="Permissions"><ShieldCheck /></button>
         </div>
       </header>
+
+      {appUpdate && (
+        <div className="veil updateVeil" role="dialog" aria-modal="true" aria-label="ULTRON update available">
+          <section className="modal panel updateModal" onClick={(event) => event.stopPropagation()}>
+            <h3><span><Download /> NEW UPDATE AVAILABLE</span></h3>
+            <p className="updateVersion">ULTRON {appUpdate.installedVersion} → {appUpdate.version}</p>
+            <p className="modalLead">{appUpdate.releaseNotes || "A new ULTRON update is ready for this device."}</p>
+            {appUpdate.platform === "android" && <p className="updateNote">Android will ask you to confirm the APK installation. ULTRON cannot silently replace an installed app.</p>}
+            {appUpdate.platform === "windows" && <p className="updateNote">Download the new installer, close ULTRON, then run the installer to update the desktop app.</p>}
+            <div className="modalActions">
+              <button className="primaryButton" onClick={applyAppUpdate}>{appUpdate.platform === "web" ? "REFRESH APP" : "DOWNLOAD UPDATE"}</button>
+              <button className="secondaryButton" onClick={() => setAppUpdate(null)}>LATER</button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {showInstall && (
         <section className="installBanner">
@@ -965,7 +1059,6 @@ export default function App() {
             <div className="permission"><Mic /><div><b>Microphone</b><small>Wake-word detection and voice commands while this app is open</small></div><button onClick={grantMic}>{permissions.microphone ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><MapPin /><div><b>Location</b><small>Only used when you request a location feature</small></div><button onClick={grantLocation}>{permissions.location ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><Bell /><div><b>Notifications</b><small>Optional ULTRON alerts</small></div><button onClick={grantNotifications}>{permissions.notifications ? "GRANTED" : "ALLOW"}</button></div>
-            <div className="permission"><Bluetooth /><div><b>Bluetooth</b><small>Optional browser device chooser where supported</small></div><button onClick={grantBluetooth}>{permissions.bluetooth ? "GRANTED" : "ALLOW"}</button></div>
             {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <div className="permission"><Monitor /><div><b>Windows desktop app</b><small>Dedicated app with local PC Allow/Deny connection</small></div><a href={WINDOWS_DOWNLOAD}>DOWNLOAD</a></div>}
             <div className="pair" id="agent-connect">
               <b>{IS_MOBILE_DEVICE ? "WINDOWS PC CONTROL" : IS_NATIVE_DESKTOP ? "DESKTOP PC CONNECTION" : "AUTOMATIC PC CONNECTION"}</b>
@@ -987,8 +1080,11 @@ export default function App() {
             <div className="modalActions">
               {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <a className="secondaryButton" href={WINDOWS_DOWNLOAD}><Download /> GET WINDOWS APP</a>}
               <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>
+              <button className="secondaryButton" onClick={checkAppUpdate} disabled={checkingUpdate}><RefreshCw /> {checkingUpdate ? "CHECKING..." : "CHECK UPDATES"}</button>
             </div>
-            <p className="privacy"><ShieldCheck /> ULTRON resets its own permission switches and pairing session when closed. Browser and Windows permissions may remain saved until you revoke them in browser settings. Every PC action still asks for confirmation.</p>
+            <div className="permission versionRow"><div><b>Installed version</b><small>{APP_VERSION} · {IS_NATIVE_ANDROID ? "Android app" : IS_NATIVE_DESKTOP ? "Windows desktop" : "Web / PWA"}</small></div><span>ULTRON</span></div>
+            <button className="revokeAllButton" onClick={revokeAllPermissions}><ShieldCheck /> REVOKE ALL ULTRON ACCESS</button>
+            <p className="privacy"><ShieldCheck /> Revoke All stops listening, cancels speech, clears ULTRON's local consent and disconnects the Windows companion. Android, Windows and browser OS permissions cannot be revoked by an app itself; use the device's system settings for those. Each sensitive PC action still asks for confirmation.</p>
           </section>
         </div>
       )}
