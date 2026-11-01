@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.1",
   "download": "/downloads/ULTRON-Windows-Setup.exe",
-  "releaseNotes": "Windows desktop update."
+  "releaseNotes": "Windows desktop app update. Close ULTRON and run the new installer to complete setup."
 }
