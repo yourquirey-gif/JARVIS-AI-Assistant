@@ -1,5 +1,5 @@
 {
-  "version": "1.0.3",
+  "version": "1.0.4",
   "download": "/downloads/ULTRON-Android.apk",
-  "releaseNotes": "Android 1.0.3: native voice assistant, Hindi/English app-launch commands for selected apps, Glass Wave Blob and permission controls. Android will ask you to approve the APK update."
+  "releaseNotes": "Android 1.0.2: native voice assistant, selected-app quick launch, Glass Wave Blob and permission controls. Android confirms installation."
 }
