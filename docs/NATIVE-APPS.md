@@ -35,3 +35,9 @@
 ## Permission reset
 - Revoke All stops speech recognition, cancels TTS, clears the app's local consent flags and disconnects the Windows companion.
 - Android, Windows and browsers do not allow an app to silently revoke all OS-managed microphone, location, notification or other protected grants. Users must change those permissions in system settings.
+
+## Native Android TTS and tap-to-talk
+- The Android app uses the Capacitor Community text-to-speech plugin for native voice output, with browser speech as a fallback.
+- Tapping the microphone starts one explicit voice-input session. A direct spoken command is processed without a wake phrase; saying Hello/Hey ULTRON first remains optional.
+- The microphone is the only required runtime permission for voice commands. Opening a known app uses the declared Android package visibility list and does not require Accessibility access.
+- The latest APK currently published is version 1.0.4 and is marked clean-install only because its signing certificate differs from the previous installed build. Do not advertise it as an automatic update until stable signing is configured.
