@@ -107,9 +107,21 @@ export default function App() {
       });
       if (!response.ok) throw new Error("Update information is not available.");
       const release = await response.json();
-      const installedVersion = IS_NATIVE_DESKTOP && window.ultronDesktop?.getVersion
-        ? await window.ultronDesktop.getVersion()
-        : APP_VERSION;
+      let installedVersion = APP_VERSION;
+      if (platform === "windows" && window.ultronDesktop?.getVersion) {
+        installedVersion = await window.ultronDesktop.getVersion();
+      } else if (platform === "web") {
+        try {
+          const savedWebVersion = window.localStorage.getItem("ultron-web-installed-version");
+          if (savedWebVersion) {
+            installedVersion = savedWebVersion;
+          } else {
+            window.localStorage.setItem("ultron-web-installed-version", APP_VERSION);
+          }
+        } catch {
+          installedVersion = APP_VERSION;
+        }
+      }
       if (release?.version && compareVersions(release.version, installedVersion) > 0 && release.version !== dismissedUpdateVersion) {
         setAppUpdate({ ...release, platform, installedVersion });
       } else {
@@ -125,6 +137,10 @@ export default function App() {
   const applyAppUpdate = async () => {
     if (!appUpdate) return;
     if (appUpdate.platform === "web") {
+      try { window.localStorage.setItem("ultron-web-installed-version", appUpdate.version); } catch {}
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistration().then((registration) => registration?.update()).catch(() => {});
+      }
       window.location.reload();
       return;
     }
