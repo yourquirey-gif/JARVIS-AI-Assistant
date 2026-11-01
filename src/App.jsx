@@ -359,13 +359,18 @@ export default function App() {
     if (androidApp) {
       setBusy(true);
       setStatus("OPENING APP");
-      speak("Opening " + androidApp.name);
       try {
         await openAndroidApp(androidApp.packageName);
-        add("assistant", androidApp.name + " opened.");
+        const openedReply = lang.startsWith("hi")
+          ? androidApp.name + " खोल दिया है।"
+          : androidApp.name + " is open.";
+        add("assistant", openedReply);
+        await speak(openedReply);
         setStatus("READY");
       } catch (e) {
-        add("system", e.message || "Could not open " + androidApp.name + ".");
+        const detail = e.message || "Could not open " + androidApp.name + ".";
+        add("system", detail);
+        speak(lang.startsWith("hi") ? androidApp.name + " नहीं खुल पाया। " + detail : detail);
         setStatus("APP OPEN FAILED");
       } finally {
         setBusy(false);
@@ -387,6 +392,11 @@ export default function App() {
         if (localData.proposed_action) {
           setPending(localData.proposed_action);
           add("system", "Approval required: " + localData.proposed_action.description);
+          const approvalVoice = lang.startsWith("hi")
+            ? "मैंने आपका PC command समझ लिया है। आगे बढ़ने के लिए स्क्रीन पर Approve दबाएँ।"
+            : "I understood your PC command. Please press Approve on screen before I run it.";
+          add("assistant", approvalVoice);
+          speak(approvalVoice);
           setStatus("AWAITING APPROVAL");
           return;
         }
@@ -409,6 +419,11 @@ export default function App() {
           if (data.kind === "action" && data.proposed_action) {
             setPending(data.proposed_action);
             add("system", "Approval required: " + data.proposed_action.description);
+            const approvalVoice = lang.startsWith("hi")
+              ? "मैंने आपका PC command समझ लिया है। आगे बढ़ने के लिए स्क्रीन पर Approve दबाएँ।"
+              : "I understood your PC command. Please press Approve on screen before I run it.";
+            add("assistant", approvalVoice);
+            speak(approvalVoice);
             setStatus("AWAITING APPROVAL");
             return;
           }
@@ -478,7 +493,9 @@ export default function App() {
       setStatus("READY");
       checkAgent();
     } catch (e) {
-      add("system", e.message || "Action failed.");
+      const detail = e.message || "Action failed.";
+      add("system", detail);
+      speak(lang.startsWith("hi") ? "Action पूरा नहीं हो पाया। " + detail : "The action failed. " + detail);
       setStatus("ACTION FAILED");
     } finally {
       setBusy(false);
@@ -488,6 +505,7 @@ export default function App() {
   const denyAction = () => {
     add("system", "Permission denied. No PC action was executed.");
     setPending(null);
+    speak(lang.startsWith("hi") ? "ठीक है। आपकी अनुमति के बिना कोई action नहीं किया गया।" : "Understood. I did not run the action.");
     setStatus("READY");
   };
 
