@@ -1,5 +1,7 @@
 {
   "version": "1.0.3",
   "download": "/downloads/ULTRON-Android.apk",
-  "releaseNotes": "Android 1.0.3 remains available. ULTRON 1.0.4 will be announced after the stable-signed APK is published."
+  "releaseNotes": "Latest APK published on the website: 1.0.4. This build has a different signing certificate from the previously installed app; uninstall the old ULTRON once before installing this APK. Automatic in-place updates will be enabled after the persistent signing key is configured in GitHub Actions.",
+  "publishedVersion": "1.0.4",
+  "installMode": "clean_install"
 }
