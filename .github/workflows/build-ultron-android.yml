@@ -72,6 +72,16 @@ jobs:
                   <package android:name="com.sec.android.app.popupcalculator" />
                   <package android:name="com.android.vending" />
                   <package android:name="com.android.settings" />
+                  <package android:name="com.instagram.android" />
+                  <package android:name="com.facebook.katana" />
+                  <package android:name="org.telegram.messenger" />
+                  <package android:name="com.spotify.music" />
+                  <package android:name="com.sec.android.app.camera" />
+                  <package android:name="com.android.camera2" />
+                  <package android:name="com.sec.android.gallery3d" />
+                  <package android:name="com.google.android.apps.photos" />
+                  <package android:name="com.google.android.apps.nbu.files" />
+                  <package android:name="com.android.documentsui" />
               </queries>'''
               text = text.replace('<application', queries + chr(10) + '    <application', 1)
           manifest.write_text(text, encoding='utf-8')
