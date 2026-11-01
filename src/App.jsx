@@ -528,11 +528,20 @@ export default function App() {
         setListening(false);
         setArmState(false);
         setStatus("THINKING");
-        if (!IS_NATIVE_ANDROID) { try { rec.current?.stop(); } catch {} }
+        if (IS_NATIVE_ANDROID) {
+          stopAndroidRecognition();
+          await new Promise((resolve) => window.setTimeout(resolve, 300));
+        } else {
+          try { rec.current?.stop(); } catch {}
+        }
         await sendCommand(remaining);
       } else {
         setArmState(true);
         setStatus("WAKE WORD HEARD · SAY COMMAND");
+        if (IS_NATIVE_ANDROID) {
+          stopAndroidRecognition();
+          await new Promise((resolve) => window.setTimeout(resolve, 300));
+        }
         const greeting = lang.startsWith("hi")
           ? "जी, मैं सुन रहा हूँ। बताइए क्या करना है?"
           : "I'm listening. What would you like me to do?";
@@ -549,7 +558,12 @@ export default function App() {
       setListening(false);
       setArmState(false);
       setStatus("THINKING");
-      if (!IS_NATIVE_ANDROID) { try { rec.current?.stop(); } catch {} }
+      if (IS_NATIVE_ANDROID) {
+        stopAndroidRecognition();
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
+      } else {
+        try { rec.current?.stop(); } catch {}
+      }
       await sendCommand(phrase);
     }
   };
