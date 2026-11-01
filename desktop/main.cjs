@@ -174,10 +174,10 @@ async function askMicrophoneAccess(force) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 1440,
-    height: 920,
-    minWidth: 980,
-    minHeight: 680,
+    width: 1280,
+    height: 720,
+    minWidth: 900,
+    minHeight: 580,
     backgroundColor: "#030914",
     show: false,
     autoHideMenuBar: true,
