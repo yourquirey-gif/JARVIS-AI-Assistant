@@ -1,5 +1,5 @@
 {
-  "version": "1.0.2",
+  "version": "1.0.3",
   "download": "/",
-  "releaseNotes": "Glass Wave Blob, platform-specific permissions, Revoke All and automatic update prompts."
+  "releaseNotes": "Web 1.0.3: Glass Wave Blob, platform-specific permission center, Revoke All and PWA update detection."
 }
