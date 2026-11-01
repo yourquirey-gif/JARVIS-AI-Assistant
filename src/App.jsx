@@ -1087,7 +1087,7 @@ export default function App() {
             )}
             <div className="modalActions">
               {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <a className="secondaryButton" href={WINDOWS_DOWNLOAD}><Download /> GET WINDOWS APP</a>}
-              <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>
+              {!IS_MOBILE_DEVICE && <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>}
               <button className="secondaryButton" onClick={checkAppUpdate} disabled={checkingUpdate}><RefreshCw /> {checkingUpdate ? "CHECKING..." : "CHECK UPDATES"}</button>
             </div>
             <div className="permission versionRow"><div><b>Installed version</b><small>{APP_VERSION} · {IS_NATIVE_ANDROID ? "Android app" : IS_NATIVE_DESKTOP ? "Windows desktop" : "Web / PWA"}</small></div><span>ULTRON</span></div>
