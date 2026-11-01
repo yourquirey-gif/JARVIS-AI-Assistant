@@ -258,6 +258,13 @@ ipcMain.handle("ultron:mic-status", async () => ({ allowed: micAllowed }));
 ipcMain.handle("ultron:request-microphone", async () => ({
   allowed: await askMicrophoneAccess(true)
 }));
+ipcMain.handle("ultron:version", async () => app.getVersion());
+ipcMain.handle("ultron:revoke-all", async () => {
+  stopPcService();
+  micAllowed = false;
+  micPromptShown = false;
+  return { allowed: false, microphoneAllowed: false };
+});
 
 app.on("before-quit", () => {
   quitting = true;
