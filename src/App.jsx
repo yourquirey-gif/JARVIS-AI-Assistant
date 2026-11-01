@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import UltronStage from "./UltronStage.jsx";
+import AndroidAppLauncher, { matchAndroidAppCommand, openAndroidApp } from "./platform/AndroidAppLauncher.jsx";
 import {
   Activity, AudioLines, Bot, Bell, ExternalLink, MapPin, Mic, MicOff,
   Monitor, RefreshCw, Send, ShieldCheck, Terminal, Volume2, VolumeX, X,
@@ -288,6 +289,27 @@ export default function App() {
     setInput("");
     setTranscript("");
     add("user", text);
+
+    // A clearly spoken, direct app-launch request is a narrow Android-only action.
+    // No model-generated action or background automation is allowed through this path.
+    const androidApp = IS_NATIVE_ANDROID ? matchAndroidAppCommand(text) : null;
+    if (androidApp) {
+      setBusy(true);
+      setStatus("OPENING APP");
+      speak("Opening " + androidApp.name);
+      try {
+        await openAndroidApp(androidApp.packageName);
+        add("assistant", androidApp.name + " opened.");
+        setStatus("READY");
+      } catch (e) {
+        add("system", e.message || "Could not open " + androidApp.name + ".");
+        setStatus("APP OPEN FAILED");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     setBusy(true);
     setStatus("THINKING");
     try {
@@ -1083,6 +1105,7 @@ export default function App() {
                 <small>{IS_NATIVE_ANDROID
                   ? "Native Android speech recognition and voice output are available in this APK. Cross-app launch, screen reading and typing controls are not enabled yet. Any future automation will be limited to clearly defined, user-directed actions rather than an unrestricted autonomous controller."
                   : "This screen is running in the mobile browser, not inside the native Android APK. Browser/PWA mode cannot launch or type inside other phone apps. Install the Android APK for native speech recognition."}</small>
+                {IS_NATIVE_ANDROID && <AndroidAppLauncher />}
                 {IS_NATIVE_ANDROID
                   ? <div className="pairStatus"><i className={permissions.microphone ? "connected" : ""} /><span>{permissions.microphone ? "MICROPHONE CONSENT ENABLED" : "MICROPHONE CONSENT NOT ENABLED"}</span></div>
                   : <a className="secondaryButton" href={ANDROID_DOWNLOAD}><Download /> GET ANDROID APP</a>}
