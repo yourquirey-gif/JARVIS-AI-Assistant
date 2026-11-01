@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { AppLauncher } from "@capacitor/app-launcher";
-import { Calculator, Camera, Chrome, Facebook, FolderOpen, Image, Instagram, Mail, MapPin, MessageCircle, Music, Phone, Play, Send, Settings, Smartphone, Youtube } from "lucide-react";
+import { Calculator, Camera, Chrome, FolderOpen, Globe, Image, Mail, MapPin, MessageCircle, Music, Phone, Play, Send, Settings, Smartphone, Users, Youtube } from "lucide-react";
 
 export const ANDROID_APP_CATALOG = [
   { id: "whatsapp", name: "WhatsApp", packageName: "com.whatsapp", aliases: ["whatsapp", "वॉट्सऐप", "व्हाट्सएप"], icon: MessageCircle },
@@ -14,8 +14,8 @@ export const ANDROID_APP_CATALOG = [
   { id: "calculator", name: "Calculator", packageName: "com.google.android.calculator", fallbackPackages: ["com.sec.android.app.popupcalculator"], aliases: ["calculator", "calc", "कैलकुलेटर"], icon: Calculator },
   { id: "playstore", name: "Play Store", packageName: "com.android.vending", aliases: ["play store", "playstore", "प्ले स्टोर"], icon: Play },
   { id: "settings", name: "Settings", packageName: "com.android.settings", aliases: ["settings", "सेटिंग", "सेटिंग्स"], icon: Settings },
-  { id: "instagram", name: "Instagram", packageName: "com.instagram.android", aliases: ["instagram", "इंस्टाग्राम"], icon: Instagram },
-  { id: "facebook", name: "Facebook", packageName: "com.facebook.katana", aliases: ["facebook", "फेसबुक"], icon: Facebook },
+  { id: "instagram", name: "Instagram", packageName: "com.instagram.android", aliases: ["instagram", "इंस्टाग्राम"], icon: Camera },
+  { id: "facebook", name: "Facebook", packageName: "com.facebook.katana", aliases: ["facebook", "फेसबुक"], icon: Users },
   { id: "telegram", name: "Telegram", packageName: "org.telegram.messenger", aliases: ["telegram", "टेलीग्राम"], icon: Send },
   { id: "spotify", name: "Spotify", packageName: "com.spotify.music", aliases: ["spotify", "स्पॉटिफाई"], icon: Music },
   { id: "camera", name: "Camera", packageName: "com.sec.android.app.camera", fallbackPackages: ["com.android.camera2"], aliases: ["camera", "कैमरा"], icon: Camera },
