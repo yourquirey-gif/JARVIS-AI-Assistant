@@ -5,7 +5,7 @@ ULTRON is a voice-first assistant with a Glass Wave Blob hologram, a Hindi/Engli
 ## Platform-specific apps
 
 1. **Web / PWA** — browser voice and chat, responsive interface and automatic web-update prompt. It cannot control other apps on a phone or access a computer's local applications.
-2. **Android app** — a separate Capacitor APK with native speech recognition and voice output. It checks its Android update manifest and asks the user to approve an APK installation when a new build is published. Cross-app phone automation is not enabled in this release.
+2. **Android app** — a separate Capacitor APK with native speech recognition and voice output. It can open a small, declared set of apps (WhatsApp, YouTube, Chrome, Gmail, Maps, Phone, Messages, Calculator, Play Store and Settings) from direct tap controls or simple direct voice commands. It does not read other apps' screens or type into them. It checks its Android update manifest and asks the user to approve an APK installation when a new build is published.
 3. **Windows desktop app** — Electron shell with a bundled local PC service. At first launch it requests separate PC-connection and microphone consent. When PC access is allowed, the local service starts on loopback and the trusted ULTRON website pairs automatically. PC actions still require in-app approval.
 
 ## Update behavior
