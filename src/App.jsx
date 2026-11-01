@@ -525,6 +525,7 @@ export default function App() {
     checkAppUpdate();
     const interval = window.setInterval(checkAppUpdate, 5 * 60 * 1000);
     window.addEventListener("focus", checkAppUpdate);
+    let installTimer = null;
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/sw.js").then((registration) => {
         registration.update().catch(() => {});
@@ -532,21 +533,17 @@ export default function App() {
     }
     const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
     if (!standalone) {
-      const timer = window.setTimeout(() => {
+      installTimer = window.setTimeout(() => {
         try {
           if (sessionStorage.getItem("ultron-install-dismissed") !== "1") setShowInstall(true);
         } catch {
           setShowInstall(true);
         }
       }, 1800);
-      return () => window.clearTimeout(timer);
     }
-    return undefined;
-  }, []);
-
-  useEffect(() => {
     return () => {
       window.clearInterval(interval);
+      if (installTimer) window.clearTimeout(installTimer);
       window.removeEventListener("focus", checkAppUpdate);
     };
   }, []);
@@ -765,7 +762,7 @@ export default function App() {
           <span className="brandIcon"><AudioLines /></span>
           <div><b>ULTRON</b><small>PERSONAL INTELLIGENCE SYSTEM</small></div>
         </div>
-        <div className="state"><i className={agent === "paired" ? "online" : ""} />{IS_MOBILE_DEVICE ? "MOBILE MODE" : statusAgent}</div>
+        <div className="state"><i className={agent === "paired" ? "online" : ""} />{IS_NATIVE_ANDROID ? "ANDROID APP" : IS_MOBILE_DEVICE ? "MOBILE WEB / PWA" : statusAgent}</div>
         <div className="actions">
           <button onClick={() => setShowDownloads(true)} title="Download ULTRON for your device"><Download /></button>
           {!IS_MOBILE_DEVICE && <button onClick={checkAgent} title="Check companion"><RefreshCw /></button>}
