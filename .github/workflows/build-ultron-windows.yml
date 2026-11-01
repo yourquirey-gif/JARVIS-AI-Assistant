@@ -46,37 +46,40 @@ jobs:
       - name: Package native Windows app
         run: npx electron-builder --win nsis --x64 --publish never
       - name: Publish installer to the Vercel website origin
-        env:
-          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           $installer = "desktop-release/ULTRON-Windows-Setup.exe"
           if (!(Test-Path $installer)) { throw "Windows installer was not created." }
-          New-Item -ItemType Directory -Force -Path "public/downloads" | Out-Null
-          Copy-Item $installer "public/downloads/ULTRON-Windows-Setup.exe" -Force
-          if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
-          @"
+          $artifactCopy = Join-Path $env:RUNNER_TEMP "ULTRON-Windows-Setup.exe"
+          Copy-Item $installer $artifactCopy -Force
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for ($attempt = 1; $attempt -le 5; $attempt++) {
+            git fetch origin main
+            if ($LASTEXITCODE -ne 0) { throw "Could not fetch the latest main branch." }
+            git reset --hard origin/main
+            if ($LASTEXITCODE -ne 0) { throw "Could not reset the publish workspace." }
+            New-Item -ItemType Directory -Force -Path "public/downloads","public/app-updates" | Out-Null
+            Copy-Item $artifactCopy "public/downloads/ULTRON-Windows-Setup.exe" -Force
+            if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
+            @"
           import json
           from pathlib import Path
           package = json.loads(Path("package.json").read_text(encoding="utf-8"))
           manifest_path = Path("public/app-updates/windows.json")
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           manifest["version"] = package["version"]
-          manifest["releaseNotes"] = "Windows desktop app update. Close ULTRON and run the new installer to complete setup."
+          manifest["releaseNotes"] = "Windows 1.0.2: Glass Wave Blob, update notifications and unified permission controls. Close ULTRON and run the installer."
           manifest_path.write_text(json.dumps(manifest, indent=2) + chr(10), encoding="utf-8")
           "@ | python -
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A public/downloads/ public/app-updates/windows.json
-          git commit -m "chore: publish native ULTRON Windows installer for Vercel"
-          for ($attempt = 1; $attempt -le 5; $attempt++) {
-            git pull --rebase origin main
-            if ($LASTEXITCODE -ne 0) {
-              git rebase --abort
-              throw "Could not rebase the Windows installer publish commit."
-            }
+            if ($LASTEXITCODE -ne 0) { throw "Could not update the Windows release manifest." }
+            git add -A public/downloads/ public/app-updates/windows.json
+            git diff --cached --quiet
+            if ($LASTEXITCODE -eq 0) { Write-Host "Windows package and manifest already match this build."; exit 0 }
+            git commit -m "chore: publish native ULTRON Windows installer for Vercel"
+            if ($LASTEXITCODE -ne 0) { throw "Could not create the Windows publish commit." }
             git push origin HEAD:main
             if ($LASTEXITCODE -eq 0) { exit 0 }
             Start-Sleep -Seconds 3
           }
-          throw "Could not push Windows installer after five retries."
+          throw "Could not publish Windows installer after five attempts."
