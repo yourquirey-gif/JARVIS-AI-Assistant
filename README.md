@@ -1,6 +1,6 @@
 # ULTRON — Personal AI Assistant
 
-ULTRON is a voice-first AI assistant with a holographic metallic robot, a desktop command centre, native Windows and Android apps, and an iPhone installable web app.
+ULTRON is a voice-first AI assistant with a glass-wave hologram, a desktop command centre, native Windows and Android apps, and an iPhone installable web app.
 
 ## Device downloads
 - **Windows 7 / 8.1:** legacy native desktop build using Electron 22 / Chromium 108. This runtime is end-of-life and has no security updates.
@@ -10,10 +10,10 @@ ULTRON is a voice-first AI assistant with a holographic metallic robot, a deskto
 
 All installers are hosted from the Vercel site origin under `/downloads/`, so custom domain deployments automatically use the same domain for download URLs.
 
-## Three parts
-1. **Vercel web app / PWA** — same React assistant interface, CodePen-inspired voice dock, download selector, mobile responsive layout and Three.js hologram with Canvas fallback.
-2. **Render Cloud AI API** — general conversation and Hindi/English command planning through Groq; it cannot access a user's PC.
-3. **Windows desktop application** — Electron shell with bundled Python/FastAPI local service. On launch it asks Allow/Deny for PC access and microphone. If PC access is allowed, it starts a random-token localhost service and the website auto-pairs.
+## Platform-specific parts
+1. **Web / PWA** — browser voice and chat, automatic web refresh prompt, browser-scoped permissions and no cross-app phone control.
+2. **Android app** — native speech recognition and voice interface. APK updates are detected from a platform manifest; Android still asks the user to approve installation. Cross-app automation is not enabled yet.
+3. **Windows desktop app** — Electron shell and bundled local PC service. On launch, it requests PC and microphone consent. If allowed, it auto-pairs to the local companion. The app checks the Windows release manifest and prompts the user to download and run an updated installer.
 
 ## Windows PC access
 The local service binds only to `127.0.0.1:8765`. The desktop process generates a random token and allowlists only the exact HTTPS origin it loads. On closing ULTRON, Electron terminates the local service and clears runtime permission state. Each PC action remains subject to an in-app approval card.
@@ -37,3 +37,4 @@ Windows: build the backend service with PyInstaller, then `npx electron-builder 
 ## Environment
 Vercel: `VITE_JARVIS_CLOUD_API_URL=https://jarvis-cloud-ai-api.onrender.com`.
 Render: `GROQ_API_KEY` (private) and `GROQ_MODEL=openai/gpt-oss-120b`.
+\n## App updates and permissions\n- The web app checks its web manifest on launch, every five minutes, and when the window regains focus. A web update prompts a refresh.\n- Android and Windows each have their own update manifest. Build workflows publish the platform version only after publishing the APK or installer. Updates are offered in-app; operating systems still require the user to approve the installer.\n- Permission Center provides **Revoke All ULTRON Access**. This stops active listening/TTS, clears app-level consent and disconnects the Windows companion. Apps cannot silently revoke OS-managed microphone/location/notification grants; users must revoke those in Android/Windows/browser settings.\n- Android currently supports native speech recognition and voice output. Cross-app launching, screen reading, global typing and remote phone automation are not included in this release. Any future Android automation will require an explicitly enabled Accessibility service and per-action confirmation.\n
