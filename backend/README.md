@@ -1,13 +1,12 @@
-# JARVIS Local Agent
+# JARVIS Local PC Agent
 
-This lightweight Python service runs on the user's PC. It is not deployed to Vercel/Render.
+This companion runs on the user's own Windows PC. It is never deployed to Render.
 
-1. Use Python 3.8.10 64-bit for legacy Windows 7 compatibility (unsupported/EOL; prefer a supported OS).
-2. Install: pip install -r requirements.txt.
-3. Copy .env.example to .env; set a long random JARVIS_TOKEN.
-4. Add the exact HTTPS site origin to ALLOWED_ORIGINS.
-5. Add GROQ_API_KEY if you want cloud AI text responses.
-6. Set ENABLE_AUTOMATION=true only after reviewing the allowlisted actions.
-7. Run: python -m uvicorn main:app --host 127.0.0.1 --port 8765.
+1. Install Python 3.8.10 64-bit for the legacy Windows 7 machine (Python 3.8 is end-of-life; a supported Windows version is strongly recommended).
+2. Run install.bat.
+3. Copy/edit .env and set a long random JARVIS_TOKEN.
+4. Add the exact deployed Vercel HTTPS origin to ALLOWED_ORIGINS.
+5. Review the allowlisted actions, then set ENABLE_AUTOMATION=true.
+6. Run start.bat. Keep its terminal open while using JARVIS.
 
-Never bind to 0.0.0.0 or expose this local agent to the public internet. Each action also requires a visible confirmation in the website.
+The agent binds to 127.0.0.1 only. Never bind to 0.0.0.0 or expose the port to the public internet. The web app uses Render's cloud API for general AI chat; this local agent handles only approved PC actions and asks for confirmation before each one.
