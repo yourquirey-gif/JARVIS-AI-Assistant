@@ -1,19 +1,26 @@
 import { useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { AppLauncher } from "@capacitor/app-launcher";
-import { Calculator, Chrome, Mail, MapPin, MessageCircle, Phone, Play, Settings, Smartphone, Youtube } from "lucide-react";
+import { Calculator, Camera, Chrome, Facebook, FolderOpen, Image, Instagram, Mail, MapPin, MessageCircle, Music, Phone, Play, Send, Settings, Smartphone, Youtube } from "lucide-react";
 
 export const ANDROID_APP_CATALOG = [
-  { id: "whatsapp", name: "WhatsApp", packageName: "com.whatsapp", aliases: ["whatsapp", "वॉट्सऐप"], icon: MessageCircle },
+  { id: "whatsapp", name: "WhatsApp", packageName: "com.whatsapp", aliases: ["whatsapp", "वॉट्सऐप", "व्हाट्सएप"], icon: MessageCircle },
   { id: "youtube", name: "YouTube", packageName: "com.google.android.youtube", aliases: ["youtube", "यूट्यूब"], icon: Youtube },
-  { id: "chrome", name: "Chrome", packageName: "com.android.chrome", aliases: ["chrome", "क्रोम"], icon: Chrome },
+  { id: "chrome", name: "Chrome", packageName: "com.android.chrome", aliases: ["chrome", "क्रोम", "browser"], icon: Chrome },
   { id: "gmail", name: "Gmail", packageName: "com.google.android.gm", aliases: ["gmail", "जीमेल"], icon: Mail },
-  { id: "maps", name: "Google Maps", packageName: "com.google.android.apps.maps", aliases: ["maps", "google maps", "गूगल मैप"], icon: MapPin },
+  { id: "maps", name: "Google Maps", packageName: "com.google.android.apps.maps", aliases: ["maps", "google maps", "गूगल मैप", "मैप"], icon: MapPin },
   { id: "phone", name: "Phone", packageName: "com.google.android.dialer", fallbackPackages: ["com.samsung.android.dialer"], aliases: ["phone", "dialer", "फोन", "डायलर"], icon: Phone },
-  { id: "messages", name: "Messages", packageName: "com.google.android.apps.messaging", fallbackPackages: ["com.samsung.android.messaging"], aliases: ["messages", "sms", "मैसेज"], icon: MessageCircle },
+  { id: "messages", name: "Messages", packageName: "com.google.android.apps.messaging", fallbackPackages: ["com.samsung.android.messaging"], aliases: ["messages", "sms", "मैसेज", "संदेश"], icon: MessageCircle },
   { id: "calculator", name: "Calculator", packageName: "com.google.android.calculator", fallbackPackages: ["com.sec.android.app.popupcalculator"], aliases: ["calculator", "calc", "कैलकुलेटर"], icon: Calculator },
   { id: "playstore", name: "Play Store", packageName: "com.android.vending", aliases: ["play store", "playstore", "प्ले स्टोर"], icon: Play },
-  { id: "settings", name: "Settings", packageName: "com.android.settings", aliases: ["settings", "सेटिंग", "सेटिंग्स"], icon: Settings }
+  { id: "settings", name: "Settings", packageName: "com.android.settings", aliases: ["settings", "सेटिंग", "सेटिंग्स"], icon: Settings },
+  { id: "instagram", name: "Instagram", packageName: "com.instagram.android", aliases: ["instagram", "इंस्टाग्राम"], icon: Instagram },
+  { id: "facebook", name: "Facebook", packageName: "com.facebook.katana", aliases: ["facebook", "फेसबुक"], icon: Facebook },
+  { id: "telegram", name: "Telegram", packageName: "org.telegram.messenger", aliases: ["telegram", "टेलीग्राम"], icon: Send },
+  { id: "spotify", name: "Spotify", packageName: "com.spotify.music", aliases: ["spotify", "स्पॉटिफाई"], icon: Music },
+  { id: "camera", name: "Camera", packageName: "com.sec.android.app.camera", fallbackPackages: ["com.android.camera2"], aliases: ["camera", "कैमरा"], icon: Camera },
+  { id: "gallery", name: "Gallery", packageName: "com.sec.android.gallery3d", fallbackPackages: ["com.google.android.apps.photos"], aliases: ["gallery", "photos", "गैलरी", "फोटो"], icon: Image },
+  { id: "files", name: "Files", packageName: "com.google.android.apps.nbu.files", fallbackPackages: ["com.android.documentsui"], aliases: ["files", "file manager", "फाइल", "फाइल मैनेजर"], icon: FolderOpen }
 ];
 
 const PACKAGE_PATTERN = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/;
@@ -93,7 +100,7 @@ export default function AndroidAppLauncher() {
         </div>
       </details>
       {status && <p className="androidAppStatus" role="status">{status}</p>}
-      <p className="androidAppHint">ULTRON can open the selected app. It cannot read its private screens or type into it in this version. App launch starts only after your tap or a clearly spoken open command.</p>
+      <p className="androidAppHint">Say “Open WhatsApp”, “YouTube kholo”, “Instagram kholo” or choose an app above. ULTRON only launches the selected app; it does not read private screens or type into other apps in this release.</p>
     </div>
   );
 }
