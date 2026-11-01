@@ -63,7 +63,7 @@ jobs:
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           manifest["version"] = package["version"]
           manifest["releaseNotes"] = "Windows desktop app update. Close ULTRON and run the new installer to complete setup."
-          manifest_path.write_text(json.dumps(manifest, indent=2) + "\\n", encoding="utf-8")
+          manifest_path.write_text(json.dumps(manifest, indent=2) + chr(10), encoding="utf-8")
           "@ | python -
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
