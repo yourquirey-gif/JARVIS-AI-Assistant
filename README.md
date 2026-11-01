@@ -21,7 +21,7 @@ Permission Center includes **Revoke All ULTRON Access**. It stops active speech 
 
 ## Android phone automation boundary
 
-The current Android APK supports native speech recognition and voice output. It does not yet launch arbitrary installed apps, read arbitrary app screens or type into other apps. Those capabilities require a separate, explicitly enabled Android Accessibility service, clear user consent and confirmation for sensitive actions. No blanket phone-control permission is enabled.
+The current Android APK supports native speech recognition and voice output. It does not yet launch arbitrary installed apps, read arbitrary app screens or type into other apps. Those capabilities are not enabled in this release. Android's Accessibility service must be switched on by the user in system settings. Google Play also restricts autonomous agents that plan and execute actions through Accessibility; any future phone controls must be narrowly scoped, user-directed routines with clear disclosure and consent. No blanket phone-control permission is enabled.
 
 ## Windows PC access
 
