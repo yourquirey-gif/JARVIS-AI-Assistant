@@ -143,7 +143,10 @@ export default function App() {
     setArmState(false);
     setSpeaking(false);
     setPairedToken("");
+    setToken("");
+    setPending(null);
     setAgent("offline");
+    setStatus("ACCESS REVOKED");
     setAutomationEnabled(false);
     setPermissions({ microphone: false, location: false, notifications: false });
     setLocation("Not shared");
