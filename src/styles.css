@@ -360,3 +360,13 @@ a{color:inherit;text-decoration:none}
  .windowsVersions button{min-height:42px}
  .downloadBig{min-height:44px}
 }
+
+
+/* ULTRON Glass Wave Blob avatar. */
+.ultronGlassCanvas{position:absolute;inset:0;width:100%;height:100%;display:block;pointer-events:none;z-index:2}
+.glassMode .avatarAura{left:5%;right:5%;top:6%;bottom:10%;border-radius:50%;background:radial-gradient(ellipse,rgba(48,169,255,.23),rgba(74,74,190,.12) 48%,transparent 73%);filter:blur(18px)}
+.glassMode.isSpeaking .avatarAura{background:radial-gradient(ellipse,rgba(55,207,255,.32),rgba(83,72,213,.14) 50%,transparent 74%)}
+.glassMode.isListening .avatarAura{background:radial-gradient(ellipse,rgba(58,238,197,.27),rgba(38,111,183,.12) 49%,transparent 74%)}
+.glassMode .visualName{top:75%;letter-spacing:8px}
+.glassMode .visualStatus{top:82%}
+.glassMode .qualityPill{z-index:3}
