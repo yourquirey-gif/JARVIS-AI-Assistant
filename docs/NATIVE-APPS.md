@@ -1,27 +1,36 @@
 # ULTRON native apps and compatibility
 
 ## Windows desktop
-- Electron 22.3.27 / Chromium 108 is used as the final Electron line that supports Windows 7/8.1.
-- This legacy runtime is end-of-life and no longer receives security updates. Prefer Windows 10/11 for ongoing use.
-- On start, the app asks for PC connection Allow/Deny, then microphone Allow/Deny. PC access launches an embedded local service bound only to 127.0.0.1.
-- The Vercel website auto-pairs with a random per-run token after PC access is allowed.
-- On app exit, Electron stops the local service and clears runtime PC/microphone consent.
-- Every local PC action still requires an approval card in ULTRON.
+- Electron 22.3.27 / Chromium 108 is used for the legacy Windows 7/8.1-compatible package. This runtime is end-of-life and receives no security updates; Windows 10/11 are preferred.
+- On first launch, ULTRON asks separately for PC connection and microphone permission. Allowing PC access starts a bundled local service bound to `127.0.0.1`.
+- The trusted hosted ULTRON UI detects the companion and auto-pairs using a random per-run token.
+- The desktop package exposes app-version and revoke-all IPC methods to the renderer.
+- Revoke All stops the local PC service and clears the app-level microphone gate. Sensitive PC actions still need an in-app approval.
 
 ## Android
-- Capacitor wraps the same React/Three.js ULTRON experience in a separate Android application.
-- The native speech-recognition plugin requests Android RECORD_AUDIO permission on first launch.
-- The Android app provides AI chat and voice on the phone. Windows PC control is available only in the Windows desktop app.
-- The generated APK is currently a debug-signed sideload APK. Play Store publication/AAB requires production signing keys and store setup.
+- Capacitor packages a separate native Android app with native speech recognition and voice output.
+- The native speech plugin requests Android microphone permission when needed.
+- The Android app checks `/app-updates/android.json`; when a newer APK is available it offers a download. Android's package installer must still be approved by the user.
+- The current APK does not yet launch arbitrary installed apps, read third-party app screens or type into other apps. A future automation module would require explicit user activation of an Android Accessibility service and per-action approval.
+- The generated APK is a debug-signed sideload APK. Play Store publication/AAB requires production signing keys and store setup.
+
+## Web / PWA
+- The mobile browser/PWA is not the native Android app. It supports browser voice features where available but cannot launch and automate other installed phone apps.
+- The web/PWA checks `/app-updates/web.json` on launch, on focus and every five minutes. A newer web build displays a refresh prompt.
 
 ## iPhone
-- The iPhone option installs the website as a Safari home-screen web app. A native signed iOS App Store application is not published.
+- The iPhone option installs the website as a Safari home-screen web app. A signed native iOS App Store application is not published.
 
-## 3D renderer
-- Newer WebGL2-capable devices use Three.js and the metallic procedural humanoid.
-- Canvas 2D remains available as a fallback for old GPUs, unsupported WebGL2 drivers, and explicit LOW mode.
-- AUTO attempts 3D at lower render scale on modest hardware before falling back.
-- Exact appearance and frame rate depend on the installed GPU, driver, browser and device.
+## Glass Wave Blob renderer
+- ULTRON uses a lightweight Canvas renderer for the glass-like orb, internal fluid waves, highlights, reflections, floating bubbles and holographic glow.
+- The animation responds to listening, thinking and speech-output state, including speech-boundary events.
+- AUTO and LOW quality modes adjust animation detail for modest devices.
+
+## Update publishing
+- Android and Windows use separate manifests under `public/app-updates/`.
+- The respective CI workflow updates its manifest only after building and publishing the matching APK or installer. This prevents the app from advertising an installer that has not finished building.
+- Updates are offered in-app, not installed silently. Android requires the package installer confirmation; Windows requires the user to run the new installer.
 
 ## Permission reset
-ULTRON stops speech recognition, cancels TTS and clears its in-memory pairing token on app/page close. The Windows desktop process stops its local server on exit. Android and browser OS permission grants may remain saved by the operating system; the app cannot revoke those grants itself. Users can revoke them in system settings.
+- Revoke All stops speech recognition, cancels TTS, clears the app's local consent flags and disconnects the Windows companion.
+- Android, Windows and browsers do not allow an app to silently revoke all OS-managed microphone, location, notification or other protected grants. Users must change those permissions in system settings.
