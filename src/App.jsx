@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
+import { App as CapacitorApp } from "@capacitor/app";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import { TextToSpeech } from "@capacitor-community/text-to-speech";
 import { AppLauncher } from "@capacitor/app-launcher";
@@ -79,6 +80,7 @@ export default function App() {
   const [showInstall, setShowInstall] = useState(false);
   const [installHelp, setInstallHelp] = useState(false);
   const [appUpdate, setAppUpdate] = useState(null);
+  const [installedNativeVersion, setInstalledNativeVersion] = useState("");
   const [androidRelease, setAndroidRelease] = useState(null);
   const [windowsRelease, setWindowsRelease] = useState(null);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState("");
@@ -120,8 +122,13 @@ export default function App() {
       if (!response.ok) throw new Error("Update information is not available.");
       const release = await response.json();
       let installedVersion = APP_VERSION;
-      if (platform === "windows" && window.ultronDesktop?.getVersion) {
+      if (platform === "android" && IS_NATIVE_ANDROID) {
+        const appInfo = await CapacitorApp.getInfo();
+        installedVersion = appInfo.version || APP_VERSION;
+        setInstalledNativeVersion(installedVersion);
+      } else if (platform === "windows" && window.ultronDesktop?.getVersion) {
         installedVersion = await window.ultronDesktop.getVersion();
+        setInstalledNativeVersion(installedVersion);
       } else if (platform === "web") {
         try {
           const savedWebVersion = window.localStorage.getItem("ultron-web-installed-version");
@@ -830,6 +837,25 @@ export default function App() {
     setPerm("notifications", permission === "granted");
     if (permission === "granted") new Notification("ULTRON", { body: "Notifications enabled, sir." });
   };
+
+  const testAndroidVoiceOutput = async () => {
+    if (!IS_NATIVE_ANDROID) return;
+    try {
+      const support = await TextToSpeech.isLanguageSupported({ lang });
+      if (!support?.supported) {
+        await TextToSpeech.openInstall();
+        const langs = await TextToSpeech.getSupportedLanguages();
+        setError("Android TTS does not support " + lang + " yet. Check installed voice data in Android Text-to-speech settings.");
+        return;
+      }
+      setError("");
+      await speak(lang.startsWith("hi") ? "अल्ट्रॉन की आवाज़ तैयार है।" : "ULTRON voice output is ready.");
+    } catch (error) {
+      setSpeaking(false);
+      setError(error?.message || "Android text-to-speech engine is unavailable. Check Android Text-to-speech settings.");
+    }
+  };
+
   const startAndroidRecognition = async () => {
     if (nativeRecognitionRunning.current) return;
     nativeRecognitionRunning.current = true;
@@ -849,7 +875,13 @@ export default function App() {
         if (listeningRef.current) await new Promise((resolve) => window.setTimeout(resolve, 150));
       }
     } catch (e) {
-      if (listeningRef.current) setError(e?.message || "Android speech recognition stopped.");
+      if (listeningRef.current) {
+        listeningRef.current = false;
+        setListening(false);
+        setArmState(false);
+        setStatus("VOICE INPUT ERROR");
+        setError(e?.message || "Android speech recognition stopped. Tap the microphone to try again.");
+      }
     } finally {
       nativeRecognitionRunning.current = false;
       // Recognition resolves with a final result before this loop exits.
@@ -1252,7 +1284,8 @@ export default function App() {
               {!IS_MOBILE_DEVICE && <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>}
               <button className="secondaryButton" onClick={checkAppUpdate} disabled={checkingUpdate}><RefreshCw /> {checkingUpdate ? "CHECKING..." : "CHECK UPDATES"}</button>
             </div>
-            <div className="permission versionRow"><div><b>Installed version</b><small>{APP_VERSION} · {IS_NATIVE_ANDROID ? "Android app" : IS_NATIVE_DESKTOP ? "Windows desktop" : "Web / PWA"}</small></div><span>ULTRON</span></div>
+            {IS_NATIVE_ANDROID && <div className="permission"><Volume2 /><div><b>Voice output / Text-to-speech</b><small>Checks that Hindi/English voice data is installed and plays a short test reply. No extra microphone permission is needed for speaking.</small></div><button onClick={testAndroidVoiceOutput}>TEST VOICE</button></div>}
+            <div className="permission versionRow"><div><b>Installed version</b><small>{installedNativeVersion || APP_VERSION} · {IS_NATIVE_ANDROID ? "Android app" : IS_NATIVE_DESKTOP ? "Windows desktop" : "Web / PWA"}</small></div><span>ULTRON</span></div>
             <button className="revokeAllButton" onClick={revokeAllPermissions}><ShieldCheck /> REVOKE ALL ULTRON ACCESS</button>
             <p className="privacy"><ShieldCheck /> Revoke All stops listening, cancels speech, clears ULTRON's local consent and disconnects the Windows companion. Android, Windows and browser OS permissions cannot be revoked by an app itself; use the device's system settings for those. Each sensitive PC action still asks for confirmation.</p>
           </section>
