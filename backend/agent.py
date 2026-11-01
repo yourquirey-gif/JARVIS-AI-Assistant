@@ -75,12 +75,26 @@ def open_folder(name):
 
 def get_system_info():
     battery = psutil.sensors_battery()
+    try:
+        disk_percent = psutil.disk_usage(str(Path.home())).percent
+    except OSError:
+        disk_percent = 0
+    try:
+        network = psutil.net_io_counters()
+        network_sent_mb = round(network.bytes_sent / (1024 ** 2), 1)
+        network_recv_mb = round(network.bytes_recv / (1024 ** 2), 1)
+    except (AttributeError, OSError):
+        network_sent_mb = 0
+        network_recv_mb = 0
     return {
         "platform": "{} {}".format(platform.system(), platform.release()),
         "python": platform.python_version(),
         "cpu_percent": psutil.cpu_percent(interval=0.2),
         "memory_percent": psutil.virtual_memory().percent,
         "memory_total_gb": round(psutil.virtual_memory().total / (1024 ** 3), 1),
+        "disk_percent": disk_percent,
+        "network_sent_mb": network_sent_mb,
+        "network_recv_mb": network_recv_mb,
         "battery": None if battery is None else {
             "percent": round(battery.percent), "plugged_in": bool(battery.power_plugged)
         }

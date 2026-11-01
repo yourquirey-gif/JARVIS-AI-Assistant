@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import UltronStage from "./UltronStage.jsx";
 import {
   Activity, AudioLines, Bot, Bell, Bluetooth, ExternalLink, MapPin, Mic, MicOff,
   Monitor, RefreshCw, Send, ShieldCheck, Terminal, Volume2, VolumeX, X,
@@ -37,6 +38,9 @@ export default function App() {
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [speechBeat, setSpeechBeat] = useState(0);
+  const [visualQuality, setVisualQuality] = useState("auto");
   const [status, setStatus] = useState("STANDBY");
   const [messages, setMessages] = useState([{ role: "assistant", text: "ULTRON online. Say “Hello Ultron” or “Hey Ultron” to get my attention." }]);
   const [input, setInput] = useState("");
@@ -70,12 +74,21 @@ export default function App() {
   const add = (role, text) => setMessages((m) => [...m, { role, text, time: new Date().toLocaleTimeString() }]);
 
   const speak = (text) => {
-    if (muted || !("speechSynthesis" in window) || !text) return;
+    if (!("speechSynthesis" in window) || !text) return;
+    if (muted) {
+      setSpeaking(false);
+      return;
+    }
     window.speechSynthesis.cancel();
+    setSpeaking(false);
     const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onboundary = () => setSpeechBeat((value) => value + 1);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
     utterance.lang = lang;
-    utterance.rate = 0.9;
-    utterance.pitch = 0.72;
+    utterance.rate = 0.88;
+    utterance.pitch = 0.68;
     utterance.volume = 1;
     const voices = window.speechSynthesis.getVoices() || [];
     const base = lang.toLowerCase().split("-")[0];
@@ -113,7 +126,7 @@ export default function App() {
       });
       if (!response.ok) throw new Error("Companion unavailable");
       const data = await response.json();
-      setAgent("available");
+      setAgent(pairedToken ? (data.automation_enabled ? "paired" : "disabled") : "available");
       setAutomationEnabled(Boolean(data.automation_enabled));
     } catch {
       setAgent("offline");
@@ -244,6 +257,7 @@ export default function App() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || "Action was not completed.");
+      if (data.system) setSystem(data.system);
       add("assistant", data.reply || "Command completed, sir.");
       speak(data.reply || "Command completed, sir.");
       setPending(null);
@@ -292,7 +306,7 @@ export default function App() {
     checkAgent();
     const interval = window.setInterval(checkAgent, 15000);
     return () => window.clearInterval(interval);
-  }, [agentUrl]);
+  }, [agentUrl, pairedToken]);
 
   useEffect(() => {
     logEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -563,78 +577,187 @@ export default function App() {
         </div>
       )}
 
-      <section className="grid">
-        <aside className="panel left">
-          <h3>CORE SYSTEMS <Activity /></h3>
-          {[
-            ["LOCAL COMPANION", statusAgent],
-            ["MICROPHONE", permissions.microphone ? "GRANTED" : "NOT GRANTED"],
-            ["PC ACTIONS", automationEnabled ? "ENABLED · APPROVAL REQUIRED" : "NOT ENABLED"],
-            ["VOICE PROFILE", "DEEP MALE PREFERRED"]
-          ].map((item) => (
-            <div className="sys" key={item[0]}>
-              <span className="sysIcon"><Bot /></span>
-              <div><b>{item[0]}</b><small>{item[1]}</small></div>
-              <i className={item[0] === "PC ACTIONS" && automationEnabled ? "goodDot" : ""} />
+      <section className="ultronLayout">
+        <aside className="hudColumn hudLeft">
+          <section className="hudPanel overviewPanel">
+            <h3><span>SYSTEM OVERVIEW</span><Activity /></h3>
+            <div className="overviewMetrics">
+              {[
+                ["CPU", system ? system.cpu_percent + "%" : "--", system ? system.cpu_percent : 0],
+                ["RAM", system ? system.memory_percent + "%" : "--", system ? system.memory_percent : 0],
+                ["DISK", system ? system.disk_percent + "%" : "--", system ? system.disk_percent : 0],
+                ["NET", system ? (system.network_sent_mb || 0) + " MB" : "--", system ? 100 : 0]
+              ].map((metric) => (
+                <div className="overviewMetric" key={metric[0]}>
+                  <div className="metricRing" style={{ "--metric-fill": metric[2] + "%" }}>
+                    <span>{metric[1]}</span>
+                  </div>
+                  <small>{metric[0]}</small>
+                </div>
+              ))}
             </div>
-          ))}
-          <hr />
-          <h3>PC COMPANION <Monitor /></h3>
-          <p className="sideText">Install the Windows companion to connect this website to your own PC.</p>
-          <a className="downloadLink" href={DESKTOP_RELEASE} target="_blank" rel="noreferrer"><Download /> DOWNLOAD ULTRON FOR WINDOWS</a>
-          <p className="safe"><ShieldCheck /> Every local PC action is shown for approval before it runs. ULTRON never runs arbitrary shell commands.</p>
+            <div className="systemFacts">
+              <span><i className={agent === "paired" ? "active" : ""} /> PC LINK <b>{agent === "paired" ? "CONNECTED" : "OFFLINE"}</b></span>
+              <span><i className={listening ? "active" : ""} /> MICROPHONE <b>{listening ? "LISTENING" : "STANDBY"}</b></span>
+            </div>
+          </section>
+
+          <section className="hudPanel terminalPanel">
+            <h3><span>ULTRON TERMINAL</span><Terminal /></h3>
+            <div className="terminalScreen">
+              <p><b>ULTRON://CORE</b> — boot sequence</p>
+              <p><em>[ OK ]</em> Neural interface initialized</p>
+              <p><em>[ OK ]</em> Canvas renderer active</p>
+              <p><em>[ {agent === "paired" ? "OK" : "--"} ]</em> Local PC companion {agent === "paired" ? "linked" : "not linked"}</p>
+              <p><em>[ {listening ? "LIVE" : "IDLE"} ]</em> Voice input {listening ? "listening" : "standby"}</p>
+              <p><em>[ {speaking ? "TALK" : "WAIT"} ]</em> Voice output {speaking ? "active" : "ready"}</p>
+              <div className="terminalPrompt"><span>ULTRON@LOCAL</span> <b>›</b> <i>system ready</i><u /></div>
+            </div>
+          </section>
+
+          <section className="hudPanel logsPanel">
+            <h3><span>REAL-TIME LOGS</span><Activity /></h3>
+            <div className="miniLogs">
+              {messages.slice(-5).map((message, index) => (
+                <p className={message.role} key={index}><time>{message.time || "NOW"}</time><b>[{message.role.toUpperCase()}]</b> {message.text}</p>
+              ))}
+              {messages.length === 0 && <p><time>--:--</time><b>[BOOT]</b> ULTRON standing by.</p>}
+            </div>
+          </section>
+          <div className="sideFoot"><ShieldCheck /> LOCAL PC ACCESS IS PERMISSION-BASED</div>
         </aside>
 
-        <section className="center">
-          <div className="orbHead"><span>VOICE INTERFACE</span><b>{listening ? (armed ? "● ULTRON ACTIVATED" : "◉ SAY HELLO ULTRON") : busy ? "◌ THINKING" : "○ STANDBY"}</b></div>
-          <button className={"orb " + (listening ? "listening" : "")} onClick={toggleMic} style={{ "--scale": 1 + level * 0.2, "--orb": "#5ee7ff" }}>
-            <span className="ring one" /><span className="ring two" />
-            <span className="orbCore"><AudioLines /><small>{listening ? (armed ? "I'M LISTENING" : "HELLO ULTRON") : busy ? "PROCESSING" : "ULTRON"}</small></span>
-          </button>
-          <p className="hint">{listening ? (armed ? "Go ahead, sir. Give your command." : "Wake-word mode is active. Say “Hello Ultron” or “Hey Ultron”.") : "Grant microphone permission, then start wake-word mode."}</p>
-          <div className="transcript">{transcript || "Wake phrase and recognized speech will appear here."}</div>
-          <div className="micActions">
-            <button onClick={toggleMic}>{listening ? <MicOff /> : <Mic />}{listening ? "STOP LISTENING" : "START WAKE WORD"}</button>
-            <button onClick={() => setMuted((value) => !value)}>{muted ? <VolumeX /> : <Volume2 />}{muted ? "UNMUTE" : "VOICE ON"}</button>
+        <section className="heroPanel">
+          <div className="heroTopline">
+            <span>MARK VII · HOLOGRAPHIC NEURAL CORE</span>
+            <b><i className={speaking ? "talking" : listening ? "listeningDot" : ""} />{speaking ? "SPEAKING" : listening ? "LISTENING" : busy ? "PROCESSING" : "AWAITING COMMAND"}</b>
+          </div>
+          <div className="heroStage">
+            <UltronStage
+              speaking={speaking}
+              listening={listening}
+              thinking={busy}
+              speechTick={speechBeat}
+              quality={visualQuality}
+              onQualityChange={setVisualQuality}
+              onMicClick={toggleMic}
+            />
+          </div>
+          <div className="heroControls">
+            <button className={listening ? "controlActive" : ""} onClick={toggleMic}>
+              {listening ? <MicOff /> : <Mic />} {listening ? "STOP LISTENING" : "ACTIVATE VOICE"}
+            </button>
+            <button onClick={() => {
+              const next = !muted;
+              setMuted(next);
+              if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+              if (next) setSpeaking(false);
+            }}>
+              {muted ? <VolumeX /> : <Volume2 />} {muted ? "UNMUTE" : "VOICE OUTPUT"}
+            </button>
             <button onClick={() => setShowPerms(true)}><ShieldCheck /> PERMISSIONS</button>
           </div>
-          <div className="voiceMeta"><span>VOICE: MASCULINE / LOW PITCH PREFERRED</span><select value={lang} onChange={(event) => setLang(event.target.value)}><option value="en-IN">English (India)</option><option value="hi-IN">Hindi</option><option value="en-US">English (US)</option></select></div>
-          {error && <p className="error"><AlertTriangle /> {error}</p>}
+          <div className="heroFooter">
+            <span>{transcript || (listening ? "Say “Hello Ultron” or “Hey Ultron”" : "Voice interface standing by")}</span>
+            <label>VOICE
+              <select value={lang} onChange={(event) => setLang(event.target.value)}>
+                <option value="en-IN">EN-IN</option>
+                <option value="hi-IN">HINDI</option>
+                <option value="en-US">EN-US</option>
+              </select>
+            </label>
+            <label>QUALITY
+              <select value={visualQuality} onChange={(event) => setVisualQuality(event.target.value)}>
+                <option value="auto">AUTO</option>
+                <option value="low">LOW PC</option>
+                <option value="high">HIGH</option>
+              </select>
+            </label>
+          </div>
+          {error && <p className="heroError"><AlertTriangle /> {error}</p>}
         </section>
 
-        <aside className="panel right">
-          <h3>LIVE TELEMETRY <Activity /></h3>
-          <div className="metric"><small>ASSISTANT STATE</small><b>{status}</b><div className="bar"><i style={{ width: busy ? "80%" : listening ? "58%" : "14%" }} /></div></div>
-          <div className="metric"><small>LOCAL MACHINE</small><b>{system?.platform || (agent === "paired" ? "Connected" : "Not paired")}</b><small>{system ? ("CPU: " + system.cpu_percent + "% · RAM: " + system.memory_percent + "% · Battery: " + (system.battery?.percent ?? "N/A") + "%") : "System data appears after a PC status request."}</small></div>
-          <div className="metric"><small>VOICE ACTIVITY</small><div className="bars">{Array.from({ length: 20 }, (_, index) => <i key={index} style={{ height: (4 + (listening ? (Math.sin(index * 0.9 + level * 14) + 1) * 9 + level * 20 : 3)) + "px" }} />)}</div></div>
-          <div className="metric"><small>SHARED LOCATION</small><b>{permissions.location ? location : "Not shared"}</b><button className="test" onClick={grantLocation}>Request location</button></div>
-          <div className="metric"><small>PAIRING STATUS</small><b>{pairedToken ? "SESSION PAIRED" : "NOT PAIRED"}</b><button className="test" onClick={() => setShowPerms(true)}>Open setup</button></div>
+        <aside className="hudColumn hudRight">
+          <section className="hudPanel aiPanel">
+            <h3><span>AI CHAT INTERFACE</span><Bot /></h3>
+            <div className="chatGreeting">
+              <b>Hello. I am ULTRON.</b>
+              <span>Your personal intelligent system assistant. How may I assist you?</span>
+            </div>
+            <div className="chatSuggestions">
+              <span>You can ask me to:</span>
+              <i>› Monitor your system</i>
+              <i>› Open apps and websites</i>
+              <i>› Automate approved tasks</i>
+              <i>› Answer questions in Hindi or English</i>
+            </div>
+            <div className="chatFeed">
+              {messages.slice(-3).map((message, index) => (
+                <div className={"chatBubble " + message.role} key={index}>
+                  <b>{message.role === "user" ? "YOU" : message.role === "system" ? "SYSTEM" : "ULTRON"}</b>
+                  <span>{message.text}</span>
+                </div>
+              ))}
+              <div ref={logEnd} />
+            </div>
+            {pending && (
+              <div className="actionApproval">
+                <b>APPROVAL REQUIRED</b>
+                <span>{pending.description}</span>
+                <div>
+                  <button disabled={busy || !automationEnabled} onClick={approveAction}>ALLOW</button>
+                  <button className="deny" onClick={denyAction}>DENY</button>
+                </div>
+              </div>
+            )}
+            <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); sendCommand(input); }}>
+              <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask ULTRON anything..." />
+              <button disabled={!input.trim() || busy} aria-label="Send message"><Send /></button>
+            </form>
+          </section>
+
+          <section className="hudPanel monitorPanel">
+            <h3><span>SYSTEM MONITOR</span><Activity /></h3>
+            <div className="monitorStat">
+              <div><span>CPU USAGE</span><b>{system ? system.cpu_percent + "%" : "—"}</b></div>
+              <div className="monitorTrace cpuTrace" />
+            </div>
+            <div className="monitorStat">
+              <div><span>RAM USAGE</span><b>{system ? system.memory_percent + "%" : "—"}</b></div>
+              <div className="monitorTrace ramTrace" />
+            </div>
+            <div className="monitorStat">
+              <div><span>DISK USAGE</span><b>{system ? system.disk_percent + "%" : "—"}</b></div>
+              <div className="monitorTrace diskTrace" />
+            </div>
+            <div className="monitorStat">
+              <div><span>NETWORK SENT</span><b>{system ? (system.network_sent_mb || 0) + " MB" : "—"}</b></div>
+              <div className="monitorTrace netTrace" />
+            </div>
+            <div className="monitorProcesses">
+              <span>PROCESSES / STATUS</span>
+              <p>{system ? system.platform : "PC companion " + (agent === "paired" ? "connected" : "not connected")}</p>
+              <p>Voice engine · {listening ? "active" : "idle"}</p>
+              <p>Renderer · Canvas 2D / {visualQuality.toUpperCase()}</p>
+            </div>
+          </section>
+
+          <section className="hudPanel shortcutsPanel">
+            <h3><span>QUICK COMMANDS</span><Power /></h3>
+            <div className="shortcutGrid">
+              <button onClick={() => sendCommand("show my PC system information")}><Activity /><span>System<br/>Info</span></button>
+              <button onClick={() => sendCommand("open calculator")}><Monitor /><span>Calculator</span></button>
+              <button onClick={() => sendCommand("open YouTube")}><Globe /><span>Open<br/>YouTube</span></button>
+              <button onClick={() => sendCommand("show desktop folders")}><Terminal /><span>Desktop<br/>Files</span></button>
+            </div>
+            <a className="downloadLink" href={DESKTOP_RELEASE} target="_blank" rel="noreferrer"><Download /> WINDOWS COMPANION</a>
+          </section>
         </aside>
       </section>
-
-      <section className="console panel">
-        <h3><Terminal /> ULTRON CONVERSATION LOG <small>LIVE SESSION</small></h3>
-        <div className="log">
-          {messages.map((message, index) => (
-            <div className={"msg " + message.role} key={index}>
-              <b>{message.role.toUpperCase()}</b><span>{message.text}</span><small>{message.time || ""}</small>
-            </div>
-          ))}
-          <div ref={logEnd} />
-        </div>
-        {pending && (
-          <div className="approval">
-            <ShieldCheck />
-            <div><b>ULTRON NEEDS YOUR APPROVAL</b><span>{pending.description}</span><small>Action: {pending.name}</small></div>
-            <button disabled={busy || !automationEnabled} onClick={approveAction}>ALLOW</button>
-            <button className="deny" onClick={denyAction}>DENY</button>
-          </div>
-        )}
-        <form onSubmit={(event) => { event.preventDefault(); sendCommand(input); }}>
-          <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Talk to ULTRON or type a command…" />
-          <button disabled={!input.trim() || busy}><Send /> SEND</button>
-        </form>
-      </section>
+      <footer className="ultronFooter">
+        <span>ULTRON · PERSONAL INTELLIGENCE SYSTEM</span>
+        <span>LOCAL MACHINE CONTROL · USER APPROVAL REQUIRED</span>
+      </footer>
 
       {showPerms && (
         <div className="veil" onClick={() => setShowPerms(false)}>

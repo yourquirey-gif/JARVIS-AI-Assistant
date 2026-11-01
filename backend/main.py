@@ -122,6 +122,7 @@ async def execute(data: ActionRequest, request: Request, x_ultron_token: str = H
     auth(request, x_ultron_token or x_jarvis_token)
     if not AUTOMATION:
         raise HTTPException(403, "PC actions are disabled. Open ULTRON PC Companion, tick Enable PC actions, then restart the companion.")
+    system_payload = None
     try:
         if data.action == "open_website":
             reply = open_website(data.args.get("name", ""))
@@ -136,13 +137,18 @@ async def execute(data: ActionRequest, request: Request, x_ultron_token: str = H
             reply = "Desktop has {} folders: {}".format(result["count"], ", ".join(result["folders"]) or "none")
         elif data.action == "get_system_info":
             result = get_system_info()
+            system_payload = result
             battery = result.get("battery")
-            reply = "{}. CPU {}%, RAM {}% of {} GB, battery {}.".format(
+            reply = "{}. CPU {}%, RAM {}% of {} GB, disk {}%, network sent {} MB / received {} MB, battery {}.".format(
                 result["platform"], result["cpu_percent"], result["memory_percent"],
-                result["memory_total_gb"],
+                result["memory_total_gb"], result.get("disk_percent", 0),
+                result.get("network_sent_mb", 0), result.get("network_recv_mb", 0),
                 ("{}%".format(battery["percent"]) if battery else "not available"))
         else:
             raise ValueError("This action is not in ULTRON's approved local action list.")
-        return {"ok": True, "reply": reply}
+        response_data = {"ok": True, "reply": reply}
+        if system_payload is not None:
+            response_data["system"] = system_payload
+        return response_data
     except (ValueError, OSError) as exc:
         raise HTTPException(400, str(exc))
