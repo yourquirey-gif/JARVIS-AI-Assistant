@@ -1,5 +1,5 @@
 {
-  "version": "1.0.0",
+  "version": "1.0.3",
   "download": "/downloads/ULTRON-Android.apk",
-  "releaseNotes": "Android package with native quick app-launch shortcuts. Approve APK installation in Android."
+  "releaseNotes": "Android 1.0.2: native voice assistant, selected-app quick launch, Glass Wave Blob and permission controls. Android confirms installation."
 }
