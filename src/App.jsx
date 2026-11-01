@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Activity, AudioLines, Bot, Bell, Bluetooth, ExternalLink, MapPin, Mic, MicOff, Monitor, RefreshCw, Send, ShieldCheck, Terminal, Volume2, VolumeX, X } from "lucide-react";
 
 const DEFAULT_AGENT = "http://127.0.0.1:8765";
+const CLOUD_API = (import.meta.env.VITE_JARVIS_CLOUD_API_URL || "").replace(/\/$/, "");
 export default function App(){
   const [agentUrl,setAgentUrl]=useState(DEFAULT_AGENT),[token,setToken]=useState(""),[pairedToken,setPairedToken]=useState("");
   const [agent,setAgent]=useState("offline"),[permissions,setPermissions]=useState({microphone:false,location:false,notifications:false,bluetooth:false});
@@ -25,7 +26,35 @@ export default function App(){
   const grantNotifications=async()=>{if(!("Notification"in window)){setError("Notifications unsupported.");return}const p=await Notification.requestPermission();setPerm("notifications",p==="granted");if(p==="granted")new Notification("JARVIS",{body:"Notifications enabled."})};
   const grantBluetooth=async()=>{try{if(!navigator.bluetooth)throw Error("Web Bluetooth is not supported by this browser.");await navigator.bluetooth.requestDevice({acceptAllDevices:true});setPerm("bluetooth",true)}catch(e){setError(e.message||"Bluetooth permission not granted.")}};
   const toggleMic=()=>{if(!permissions.microphone){setError("First grant microphone permission in Permissions.");return}if(!rec.current){setError("This browser does not support Web Speech Recognition. Try supported Chrome or Edge.");return}if(listening){setListening(false);setStatus("STANDBY");try{rec.current.stop()}catch{};stream.current?.getTracks().forEach(t=>t.stop());stream.current=null}else{setError("");setListening(true);setStatus("LISTENING");try{rec.current.start()}catch{setError("Could not start microphone.");setListening(false)}}};
-  async function sendCommand(text){if(!text.trim()||busy)return;setInput("");add("user",text);setBusy(true);setStatus("THINKING");try{const r=await localFetch("/api/command",{method:"POST",body:JSON.stringify({message:text,language:lang})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Command failed");if(d.proposed_action){setPending(d.proposed_action);add("system","Permission required: "+d.proposed_action.description)}else{add("assistant",d.reply);speak(d.reply)}setStatus("READY")}catch(e){add("assistant",agent==="offline"?"Your local PC agent is offline. Start it, then connect it here.":e.message);setStatus("REQUEST FAILED")}finally{setBusy(false)}}
+  async function sendCommand(text){
+    if(!text.trim()||busy)return;
+    setInput("");add("user",text);setBusy(true);setStatus("THINKING");
+    try{
+      let d;
+      if(pairedToken){
+        const local=await localFetch("/api/command",{method:"POST",body:JSON.stringify({message:text,language:lang})});
+        const localData=await local.json();
+        if(!local.ok)throw Error(localData.detail||"Local agent request failed");
+        if(localData.proposed_action){
+          setPending(localData.proposed_action);
+          add("system","Permission required: "+localData.proposed_action.description);
+          setStatus("AWAITING APPROVAL");
+          return;
+        }
+        if(localData.needs_ai){
+          if(!CLOUD_API)throw Error("Cloud AI API is not configured. Set VITE_JARVIS_CLOUD_API_URL in Vercel.");
+          const cloud=await fetch(CLOUD_API+"/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,language:lang,history:messages.slice(-8).map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.text}))})});
+          d=await cloud.json();if(!cloud.ok)throw Error(d.detail||"Cloud AI request failed");
+        }else{d=localData}
+      }else{
+        if(!CLOUD_API)throw Error("Cloud AI API is not configured. Set VITE_JARVIS_CLOUD_API_URL in Vercel.");
+        const cloud=await fetch(CLOUD_API+"/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,language:lang,history:messages.slice(-8).map(m=>({role:m.role==="assistant"?"assistant":"user",content:m.text}))})});
+        d=await cloud.json();if(!cloud.ok)throw Error(d.detail||"Cloud AI request failed");
+      }
+      add("assistant",d.reply||"I am ready.");speak(d.reply||"I am ready.");setStatus("READY");
+    }catch(e){add("assistant",e.message);setStatus("REQUEST FAILED")}
+    finally{setBusy(false)}
+  }
   async function approveAction(){if(!pending)return;setBusy(true);try{const r=await localFetch("/api/action/execute",{method:"POST",body:JSON.stringify({action:pending.name,args:pending.args||{}})});const d=await r.json();if(!r.ok)throw Error(d.detail||"Action not completed");add("assistant",d.reply);speak(d.reply);if(d.system)setSystem(d.system);setPending(null)}catch(e){add("system",e.message)}finally{setBusy(false)}}
   const denyAction=()=>{add("system","You denied this action. Nothing was changed.");setPending(null)};
   return <main className="shell"><header className="top"><div className="brand"><span className="brandIcon"><AudioLines/></span><div><b>J.A.R.V.I.S</b><small>PERSONAL INTELLIGENCE SYSTEM</small></div></div><div className="state"><i className={agent==="paired"?"online":""}/>{agent==="paired"?"LOCAL AGENT PAIRED":agent==="available"?"AGENT FOUND — PAIR":"AGENT OFFLINE"}</div><div className="actions"><button onClick={checkAgent} title="Check agent"><RefreshCw/></button><button onClick={()=>setShowPerms(true)} title="Permissions"><ShieldCheck/></button></div></header>
