@@ -949,28 +949,7 @@ export default function App() {
             </div>
           </section>
 
-          <section className="hudPanel shortcutsPanel">
-            <h3><span>{IS_MOBILE_DEVICE ? "QUICK AI ACTIONS" : "QUICK COMMANDS"}</span><Power /></h3>
-            <div className="shortcutGrid">
-              {IS_MOBILE_DEVICE ? (
-                <>
-                  <button onClick={() => sendCommand("Explain artificial intelligence in simple Hindi")}><Bot /><span>Explain<br/>AI</span></button>
-                  <button onClick={() => sendCommand("Help me plan my day")}><Activity /><span>Plan<br/>Day</span></button>
-                  <button onClick={() => sendCommand("Tell me one interesting science fact")}><Globe /><span>Science<br/>Fact</span></button>
-                  <button onClick={() => { setShowPerms(true); }}><ShieldCheck /><span>App<br/>Access</span></button>
-                </>
-              ) : (
-                <>
-                  <button onClick={() => sendCommand("show my PC system information")}><Activity /><span>System<br/>Info</span></button>
-                  <button onClick={() => sendCommand("open calculator")}><Monitor /><span>Calculator</span></button>
-                  <button onClick={() => sendCommand("open YouTube")}><Globe /><span>Open<br/>YouTube</span></button>
-                  <button onClick={() => sendCommand("show desktop folders")}><Terminal /><span>Desktop<br/>Files</span></button>
-                </>
-              )}
-            </div>
-            {!IS_MOBILE_DEVICE && <a className="downloadLink" href={WINDOWS_DOWNLOAD}><Download /> WINDOWS COMPANION</a>}
-            {IS_MOBILE_DEVICE && <p className="mobileHint">MOBILE MODE · Android app has native voice permission. iPhone uses Safari Add to Home Screen. Windows PC control is available in the desktop app.</p>}
-          </section>
+
         </aside>
       </section>
       <footer className="ultronFooter">
