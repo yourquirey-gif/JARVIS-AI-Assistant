@@ -94,18 +94,66 @@ jobs:
           gradle.write_text(source, encoding="utf-8")
           print(f"Android package version: {version} (versionCode {version_code})")
           PY
+      - name: Configure stable Android release signing
+        env:
+          ULTRON_ANDROID_KEYSTORE_BASE64: ${{ secrets.ULTRON_ANDROID_KEYSTORE_BASE64 }}
+          ULTRON_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ULTRON_ANDROID_KEYSTORE_PASSWORD }}
+          ULTRON_ANDROID_KEY_ALIAS: ${{ secrets.ULTRON_ANDROID_KEY_ALIAS }}
+          ULTRON_ANDROID_KEY_PASSWORD: ${{ secrets.ULTRON_ANDROID_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in ULTRON_ANDROID_KEYSTORE_BASE64 ULTRON_ANDROID_KEYSTORE_PASSWORD ULTRON_ANDROID_KEY_ALIAS ULTRON_ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "Missing required GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+          KEYSTORE_PATH="$RUNNER_TEMP/ultron-android-release.jks"
+          printf '%s' "$ULTRON_ANDROID_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE_PATH"
+          test -s "$KEYSTORE_PATH"
+          echo "ULTRON_ANDROID_KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          gradle = Path("android/app/build.gradle")
+          source = gradle.read_text(encoding="utf-8")
+          if "ULTRON_ANDROID_KEYSTORE_PATH" not in source:
+              source += '''
+
+          // Stable ULTRON release signing. The private keystore is injected by CI.
+          android {
+              signingConfigs {
+                  release {
+                      storeFile file(System.getenv("ULTRON_ANDROID_KEYSTORE_PATH"))
+                      storePassword System.getenv("ULTRON_ANDROID_KEYSTORE_PASSWORD")
+                      keyAlias System.getenv("ULTRON_ANDROID_KEY_ALIAS")
+                      keyPassword System.getenv("ULTRON_ANDROID_KEY_PASSWORD")
+                  }
+              }
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.release
+                      minifyEnabled false
+                  }
+              }
+          }
+          '''
+              gradle.write_text(source, encoding="utf-8")
+          print("Stable ULTRON release signing configured.")
+          PY
       - name: Build installable APK
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug
+          ./gradlew --no-daemon assembleRelease
       - name: Publish APK to the Vercel website origin
         shell: bash
         run: |
           set -euo pipefail
-          test -f android/app/build/outputs/apk/debug/app-debug.apk
+          test -f android/app/build/outputs/apk/release/app-release.apk
           APK_ARTIFACT="$RUNNER_TEMP/ULTRON-Android.apk"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "$APK_ARTIFACT"
+          cp android/app/build/outputs/apk/release/app-release.apk "$APK_ARTIFACT"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for attempt in 1 2 3 4 5; do
@@ -120,7 +168,7 @@ jobs:
           manifest_path = Path("public/app-updates/android.json")
           manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
           manifest["version"] = package["version"]
-          manifest["releaseNotes"] = "Android 1.0.2: native voice assistant, selected-app quick launch, Glass Wave Blob and permission controls. Android confirms installation."
+          manifest["releaseNotes"] = "Android 1.0.4: stable-signed native voice assistant, selected-app quick launch, Glass Wave Blob and permission controls. Android confirms installation."
           manifest_path.write_text(json.dumps(manifest, indent=2) + chr(10), encoding="utf-8")
           PY
             git add public/downloads/ULTRON-Android.apk public/app-updates/android.json
