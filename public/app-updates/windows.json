@@ -1,5 +1,5 @@
 {
-  "version": "1.0.1",
+  "version": "1.0.2",
   "download": "/downloads/ULTRON-Windows-Setup.exe",
-  "releaseNotes": "Windows desktop app update. Close ULTRON and run the new installer to complete setup."
+  "releaseNotes": "Windows desktop update with Glass Wave Blob, version-aware update prompt and unified access revocation."
 }
