@@ -54,6 +54,23 @@ jobs:
           for permission in permissions:
               if permission not in text:
                   text = text.replace('<application', permission + chr(10) + '    <application', 1)
+          if '<queries>' not in text:
+              queries = '''    <queries>
+                  <package android:name="com.whatsapp" />
+                  <package android:name="com.google.android.youtube" />
+                  <package android:name="com.android.chrome" />
+                  <package android:name="com.google.android.gm" />
+                  <package android:name="com.google.android.apps.maps" />
+                  <package android:name="com.google.android.dialer" />
+                  <package android:name="com.samsung.android.dialer" />
+                  <package android:name="com.google.android.apps.messaging" />
+                  <package android:name="com.samsung.android.messaging" />
+                  <package android:name="com.google.android.calculator" />
+                  <package android:name="com.sec.android.app.popupcalculator" />
+                  <package android:name="com.android.vending" />
+                  <package android:name="com.android.settings" />
+              </queries>'''
+              text = text.replace('<application', queries + chr(10) + '    <application', 1)
           manifest.write_text(text, encoding='utf-8')
           PY
       - name: Build installable APK
