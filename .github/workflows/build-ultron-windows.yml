@@ -55,9 +55,19 @@ jobs:
           New-Item -ItemType Directory -Force -Path "public/downloads" | Out-Null
           Copy-Item $installer "public/downloads/ULTRON-Windows-Setup.exe" -Force
           if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
+          @"
+          import json
+          from pathlib import Path
+          package = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          manifest_path = Path("public/app-updates/windows.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          manifest["version"] = package["version"]
+          manifest["releaseNotes"] = "Windows desktop app update. Close ULTRON and run the new installer to complete setup."
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\\n", encoding="utf-8")
+          "@ | python -
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A public/downloads/
+          git add -A public/downloads/ public/app-updates/windows.json
           git commit -m "chore: publish native ULTRON Windows installer for Vercel"
           for ($attempt = 1; $attempt -le 5; $attempt++) {
             git pull --rebase origin main
