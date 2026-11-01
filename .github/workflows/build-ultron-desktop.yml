@@ -1,0 +1,38 @@
+name: Build ULTRON Desktop Companion
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/build-ultron-desktop.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.8.10"
+      - name: Install desktop dependencies and packager
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+          python -m pip install pyinstaller==5.13.2
+      - name: Build Windows desktop companion
+        run: |
+          pyinstaller --noconfirm --clean --onefile --windowed --name ULTRON-Desktop --paths backend --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all pydantic --collect-all psutil backend/ultron_desktop.py
+      - name: Publish latest desktop executable
+        env:
+          GH_TOKEN: ${${ github.token }}
+        shell: pwsh
+        run: |
+          gh release view ultron-latest --repo $env:GITHUB_REPOSITORY
+          if ($LASTEXITCODE -ne 0) {
+            gh release create ultron-latest --repo $env:GITHUB_REPOSITORY --title "ULTRON Desktop Companion - Latest" --notes "Latest Windows desktop companion build from the main branch."
+          }
+          gh release upload ultron-latest dist/ULTRON-Desktop.exe --repo $env:GITHUB_REPOSITORY --clobber

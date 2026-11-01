@@ -1,4 +1,4 @@
-name: JARVIS CI
+name: ULTRON CI
 on:
   push:
     branches: [main]

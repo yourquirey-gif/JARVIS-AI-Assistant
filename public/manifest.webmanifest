@@ -1,0 +1,12 @@
+{
+  "id": "/",
+  "name": "ULTRON Personal AI",
+  "short_name": "ULTRON",
+  "description": "Voice-first personal AI assistant",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#050b16",
+  "theme_color": "#050b16",
+  "icons": [{"src": "/ultron-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}]
+}

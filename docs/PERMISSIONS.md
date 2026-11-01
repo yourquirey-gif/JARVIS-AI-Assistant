@@ -1,34 +1,27 @@
-# JARVIS permission model
+# ULTRON permission and safety model
 
-## Browser permissions (requested separately)
-- Microphone: only for voice recognition and orb audio-level animation.
-- Location: only when the user invokes a location feature.
-- Notifications: optional alerts.
-- Bluetooth: optional device chooser where Web Bluetooth is supported. A permission grant does not mean every Bluetooth device or system setting is controllable.
+## Browser permissions
+- Microphone: required for voice recognition and voice activity display.
+- Notifications, location and Bluetooth: optional and requested separately.
+- Installing the website as a PWA does not grant operating-system access.
 
-## Local PC permissions
-The website connects to a small Python companion on 127.0.0.1. The user must start it and pair it with a private token. The local companion:
-- Accepts requests only from configured website origins.
-- Requires the pairing token on protected endpoints.
-- Is bound to loopback only.
-- Executes only a small explicit allowlist.
-- Shows a confirmation card in the web UI for each action before execution.
+## Desktop companion
+The desktop companion must be run on the PC being controlled. It creates a random pairing key, stores it in the user's local AppData folder, allows only explicitly configured website origins, and binds the service to 127.0.0.1.
+The user must deliberately enable PC actions in the desktop companion, copy the pairing key, and pair from the website.
+Each action appears as a confirmation card before execution.
 
-Initial allowlisted actions:
-- Open approved websites in the default browser.
-- Launch Notepad, Calculator or Paint on Windows.
-- Read basic CPU, memory and battery status.
-- List folder names (not file contents) on the Desktop.
+## Allowlisted actions
+- Open selected websites and valid HTTP/HTTPS URLs.
+- Launch a fixed list of built-in Windows applications.
+- Open standard user folders.
+- Read basic CPU, RAM and battery status.
+- List folder names on Desktop.
 
-Not yet implemented:
-- Closing browser tabs (requires a dedicated extension or a native browser integration).
-- Changing Wi-Fi/Bluetooth settings.
-- Reading arbitrary files or the full filesystem.
-- Full desktop mouse/keyboard automation.
-- Telegram remote control.
+## Explicitly excluded
+Arbitrary shell or PowerShell commands, password/credential access, silent recording, unrestricted filesystem access, destructive file operations, purchases, sending messages, changing security controls, shutdown and restart.
 
-## Browser compatibility notes
-A deployed site must use HTTPS for microphone, location and local-network access features. Modern Chromium browsers may show a separate Local Network / Loopback permission prompt when the public website connects to localhost. Older browsers may not show that prompt, so the local pairing token and exact allowed-origin check remain important. Browser support differs by feature and version.
+## Wake-word limitation
+Wake-word listening uses the browser's speech-recognition service. It runs only while the ULTRON web app is open, microphone permission is granted, and the user has explicitly started listening. It is not an OS-level always-on background listener. Recognition and voice quality depend on browser and installed system voices.
 
-## Important
-A browser's Allow button only grants the specific browser capability shown in its prompt. It does not grant administrator rights or unrestricted OS access. Windows UAC, app-specific access, and any local-agent action policy remain separate.
+## Browser compatibility
+The deployed website must use HTTPS. Modern browsers may show a separate Local Network / Loopback access prompt when a public website connects to localhost. Browser support varies. If local pairing fails, check that the desktop companion is running, PC actions are enabled, the exact website origin is configured, the pairing key is correct, and the browser permits local-network access.
