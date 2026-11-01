@@ -38,6 +38,8 @@ jobs:
         env:
           VITE_JARVIS_CLOUD_API_URL: https://jarvis-cloud-ai-api.onrender.com
         run: npm run build
+      - name: Exclude web-only installers from the Android package
+        run: rm -rf dist/downloads
       - name: Generate native Android project
         run: |
           npx cap add android
