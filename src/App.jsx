@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
+import { AppLauncher } from "@capacitor/app-launcher";
 import UltronStage from "./UltronStage.jsx";
 import AndroidAppLauncher, { matchAndroidAppCommand, openAndroidApp } from "./platform/AndroidAppLauncher.jsx";
 import {
@@ -77,6 +78,7 @@ export default function App() {
   const [showInstall, setShowInstall] = useState(false);
   const [installHelp, setInstallHelp] = useState(false);
   const [appUpdate, setAppUpdate] = useState(null);
+  const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState("");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const rec = useRef(null);
   const logEnd = useRef(null);
@@ -108,7 +110,7 @@ export default function App() {
       const installedVersion = IS_NATIVE_DESKTOP && window.ultronDesktop?.getVersion
         ? await window.ultronDesktop.getVersion()
         : APP_VERSION;
-      if (release?.version && compareVersions(release.version, installedVersion) > 0) {
+      if (release?.version && compareVersions(release.version, installedVersion) > 0 && release.version !== dismissedUpdateVersion) {
         setAppUpdate({ ...release, platform, installedVersion });
       } else {
         setAppUpdate(null);
@@ -120,7 +122,7 @@ export default function App() {
     }
   };
 
-  const applyAppUpdate = () => {
+  const applyAppUpdate = async () => {
     if (!appUpdate) return;
     if (appUpdate.platform === "web") {
       window.location.reload();
@@ -128,7 +130,15 @@ export default function App() {
     }
     const base = appUpdate.platform === "android" ? UPDATE_ORIGIN : window.location.origin;
     const url = new URL(appUpdate.download || (appUpdate.platform === "android" ? ANDROID_DOWNLOAD : WINDOWS_DOWNLOAD), base);
-    window.open(url.toString(), "_blank", "noopener,noreferrer");
+    try {
+      if (appUpdate.platform === "android" && IS_NATIVE_ANDROID) {
+        await AppLauncher.openUrl({ url: url.toString() });
+        return;
+      }
+      window.open(url.toString(), "_blank", "noopener,noreferrer");
+    } catch (e) {
+      setError(e.message || "Could not open the update download.");
+    }
   };
 
   const revokeAllPermissions = async () => {
@@ -805,7 +815,7 @@ export default function App() {
             {appUpdate.platform === "windows" && <p className="updateNote">Download the new installer, close ULTRON, then run the installer to update the desktop app.</p>}
             <div className="modalActions">
               <button className="primaryButton" onClick={applyAppUpdate}>{appUpdate.platform === "web" ? "REFRESH APP" : "DOWNLOAD UPDATE"}</button>
-              <button className="secondaryButton" onClick={() => setAppUpdate(null)}>LATER</button>
+              <button className="secondaryButton" onClick={() => { setDismissedUpdateVersion(appUpdate.version); setAppUpdate(null); }}>LATER</button>
             </div>
           </section>
         </div>
