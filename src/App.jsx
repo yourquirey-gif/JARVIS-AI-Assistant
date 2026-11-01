@@ -46,7 +46,6 @@ export default function App() {
   const [input, setInput] = useState("");
   const [transcript, setTranscript] = useState("");
   const [lang, setLang] = useState("en-IN");
-  const [level, setLevel] = useState(0);
   const [pending, setPending] = useState(null);
   const [error, setError] = useState("");
   const [location, setLocation] = useState("Not shared");
@@ -56,9 +55,6 @@ export default function App() {
   const [showInstall, setShowInstall] = useState(false);
   const [installHelp, setInstallHelp] = useState(false);
   const rec = useRef(null);
-  const stream = useRef(null);
-  const audioCtx = useRef(null);
-  const raf = useRef(null);
   const logEnd = useRef(null);
   const listeningRef = useRef(false);
   const armedRef = useRef(false);
@@ -398,52 +394,6 @@ export default function App() {
     };
   }, [lang]);
 
-  useEffect(() => {
-    let alive = true;
-    let source = null;
-    async function meter() {
-      if (!listening) return;
-      try {
-        const audioStream = stream.current || await navigator.mediaDevices.getUserMedia({ audio: true });
-        if (!alive) {
-          audioStream.getTracks().forEach((track) => track.stop());
-          return;
-        }
-        stream.current = audioStream;
-        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-        if (!AudioContextClass) return;
-        const context = audioCtx.current || new AudioContextClass();
-        const analyser = context.createAnalyser();
-        analyser.fftSize = 256;
-        source = context.createMediaStreamSource(audioStream);
-        source.connect(analyser);
-        audioCtx.current = context;
-        const buffer = new Uint8Array(analyser.frequencyBinCount);
-        const tick = () => {
-          if (!alive) return;
-          analyser.getByteTimeDomainData(buffer);
-          const power = buffer.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / buffer.length;
-          setLevel(Math.min(1, Math.sqrt(power) * 2.6));
-          raf.current = requestAnimationFrame(tick);
-        };
-        tick();
-      } catch {
-        setError("Please allow microphone access in browser settings.");
-        listeningRef.current = false;
-        setListening(false);
-      }
-    }
-    meter();
-    return () => {
-      alive = false;
-      if (raf.current) cancelAnimationFrame(raf.current);
-      if (source) {
-        try { source.disconnect(); } catch {}
-      }
-      if (!listening) setLevel(0);
-    };
-  }, [listening]);
-
   const grantMic = async () => {
     try {
       const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -503,10 +453,6 @@ export default function App() {
       setArmState(false);
       setStatus("STANDBY");
       try { rec.current.stop(); } catch {}
-      if (stream.current) {
-        stream.current.getTracks().forEach((track) => track.stop());
-        stream.current = null;
-      }
     } else {
       setError("");
       listeningRef.current = true;
