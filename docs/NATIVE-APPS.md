@@ -11,7 +11,8 @@
 - Capacitor packages a separate native Android app with native speech recognition and voice output.
 - The native speech plugin requests Android microphone permission when needed.
 - The Android app checks `/app-updates/android.json`; when a newer APK is available it offers a download. Android's package installer must still be approved by the user.
-- The current APK does not yet launch arbitrary installed apps, read third-party app screens or type into other apps. Android requires the user to enable an Accessibility service from system settings. Google Play policy also restricts autonomous agents that plan and execute actions through Accessibility; any future controls must be narrowly scoped, user-directed routines with clear disclosure and consent.
+- The app includes tap-to-open shortcuts and direct voice commands for a small set of known apps (WhatsApp, YouTube, Chrome, Gmail, Maps, Phone, Messages, Calculator, Play Store and Settings). It does not enumerate the full installed-app list, read third-party app screens or type into other apps.
+- Any future cross-app typing or screen automation would require a separate, explicitly enabled Android Accessibility service and must follow Google Play's narrow, user-directed automation rules. Autonomous agents that autonomously plan and execute arbitrary actions through Accessibility are not permitted by Google Play policy.
 - The generated APK is a debug-signed sideload APK. Play Store publication/AAB requires production signing keys and store setup.
 
 ## Web / PWA
