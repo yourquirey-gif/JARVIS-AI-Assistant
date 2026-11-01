@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ultron-artifact-release
+  group: ultron-android-publish
   cancel-in-progress: false
 
 jobs:
@@ -72,6 +72,24 @@ jobs:
               </queries>'''
               text = text.replace('<application', queries + chr(10) + '    <application', 1)
           manifest.write_text(text, encoding='utf-8')
+          PY
+      - name: Set Android package version
+        run: |
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+          version = json.loads(Path("package.json").read_text(encoding="utf-8"))["version"]
+          major, minor, patch = (int(part) for part in version.split("."))
+          version_code = major * 1000000 + minor * 1000 + patch
+          gradle = Path("android/app/build.gradle")
+          source = gradle.read_text(encoding="utf-8")
+          source, code_count = re.subn(r"versionCode\\s+\\d+", f"versionCode {version_code}", source, count=1)
+          source, name_count = re.subn(r'versionName\\s+["\\'][^"\\']+["\\']', f'versionName "{version}"', source, count=1)
+          if code_count != 1 or name_count != 1:
+              raise SystemExit("Could not find Android versionCode/versionName in app/build.gradle.")
+          gradle.write_text(source, encoding="utf-8")
+          print(f"Android package version: {version} (versionCode {version_code})")
           PY
       - name: Build installable APK
         run: |
