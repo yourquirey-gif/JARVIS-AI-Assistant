@@ -14,7 +14,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ultron-android-publish
+  group: ultron-artifact-release
   cancel-in-progress: false
 
 jobs:
