@@ -1,41 +1,39 @@
 # ULTRON — Personal AI Assistant
 
-ULTRON is a voice-first assistant with a metallic hologram, an installable web app, and a Windows PC companion.
+ULTRON is a voice-first AI assistant with a holographic metallic robot, a desktop command centre, native Windows and Android apps, and an iPhone installable web app.
 
-## Architecture
-1. **Vercel website / PWA** — same-origin installer download, desktop and mobile UI, voice interface, command centre panels and approval cards.
-2. **Render Cloud AI API** — general conversation and Hindi/English command planning through Groq. It cannot access the user's PC.
-3. **ULTRON PC Companion** — Windows desktop app that runs a loopback-only service on the user's PC.
+## Device downloads
+- **Windows 7 / 8.1:** legacy native desktop build using Electron 22 / Chromium 108. This runtime is end-of-life and has no security updates.
+- **Windows 10 / 11:** same desktop package and UI. Current browsers/PWA are preferred for security-sensitive use.
+- **Android:** separate Capacitor native APK with native speech recognition and Android microphone permissions.
+- **iPhone:** installable website/PWA through Safari. A signed App Store app is not published yet.
 
-## Install
-- Open the Vercel website and install ULTRON as a PWA from the browser's Install / Add to Home Screen option.
-- The Windows companion is served from the same website origin at `/downloads/ULTRON-Desktop.exe`. A future custom domain automatically uses its own URL for the installer.
-- Run the Windows companion, enable approved PC actions, and start the local service.
-- The website automatically discovers and pairs with the companion when opened from an exact trusted origin. No manual pairing-key copy/paste is needed for trusted origins.
-- Keep the Windows companion running (the Minimize button keeps it active). Closing it stops the local service.
+All installers are hosted from the Vercel site origin under `/downloads/`, so custom domain deployments automatically use the same domain for download URLs.
 
-## Permissions and app-close behaviour
-ULTRON starts with its own microphone/location/notification/Bluetooth switches off. On page close, its listening loop, speech output, in-memory pairing token and displayed permission states are cleared. On next open, the user must explicitly turn listening on again.
-Browsers and operating systems retain their own permission grants. A website cannot revoke a saved browser microphone/location/notification grant programmatically or force the browser to show a fresh system prompt on every launch. Users can revoke those grants in browser/site settings.
+## Three parts
+1. **Vercel web app / PWA** — same React assistant interface, CodePen-inspired voice dock, download selector, mobile responsive layout and Three.js hologram with Canvas fallback.
+2. **Render Cloud AI API** — general conversation and Hindi/English command planning through Groq; it cannot access a user's PC.
+3. **Windows desktop application** — Electron shell with bundled Python/FastAPI local service. On launch it asks Allow/Deny for PC access and microphone. If PC access is allowed, it starts a random-token localhost service and the website auto-pairs.
 
-## Compatibility and mobile
-- The avatar uses Canvas 2D rather than WebGL to reduce GPU requirements.
-- Auto / Low / High visual quality modes adjust rendering work for the available device.
-- The frontend build is transpiled for Chromium 109 / Edge 109 and Firefox 115-era engines to improve support for legacy browsers. Windows 7 and Python 3.8 are out of security support; compatibility depends on the browser, graphics driver and audio devices.
-- The same PWA has a mobile-specific layout for Android and iOS browsers. Mobile installation provides ULTRON voice/chat; Windows PC actions require the companion running on the Windows computer.
+## Windows PC access
+The local service binds only to `127.0.0.1:8765`. The desktop process generates a random token and allowlists only the exact HTTPS origin it loads. On closing ULTRON, Electron terminates the local service and clears runtime permission state. Each PC action remains subject to an in-app approval card.
 
-## Safety
-The companion binds only to `127.0.0.1`, returns its pairing key only to exact allowlisted website origins and supports only a controlled list of actions. Each action still requires in-app confirmation. Arbitrary shell execution, password access, silent recording, destructive file changes, purchases and message sending are not enabled.
+Allowed actions: open selected websites, launch selected built-in applications, open standard user folders, and read basic CPU/RAM/disk/network/battery status. Arbitrary shell execution, passwords, destructive changes, silent recording, purchases and sending messages are not enabled.
 
-## Render
-Runtime: Python 3.12
-Build: `pip install -r cloud-api/requirements.txt`
-Start: `cd cloud-api && uvicorn main:app --host 0.0.0.0 --port $PORT`
-Environment: `GROQ_API_KEY` (private), `GROQ_MODEL=openai/gpt-oss-120b`
+## 3D and legacy fallback
+Newer WebGL2-capable devices render a custom procedural metallic Three.js humanoid with moving jaw, arms, hands and fingers. If WebGL2 is unavailable or LOW mode is selected, the Canvas 2D ULTRON avatar remains visible. AUTO tries WebGL2 with reduced resolution on modest hardware before falling back.
 
-## Vercel
-Framework: Vite
-Build: `npm run build`
-Output: `dist`
-Cloud API URL: `VITE_JARVIS_CLOUD_API_URL=https://jarvis-cloud-ai-api.onrender.com`
-Windows installer: served as a Vercel static asset at `/downloads/ULTRON-Desktop.exe`.
+Windows 7 and 8.1 compatibility uses Electron 22, the final Electron major version that supports those OS versions. That runtime is end-of-life; Windows 7/8.1 are unsupported. Actual performance and 3D rendering depend on the GPU driver and available memory.
+
+## Build
+```bash
+npm install
+npm run build
+```
+
+Android: `npx cap add android`, then `npx cap sync android` and build APK in Android Studio/Gradle.
+Windows: build the backend service with PyInstaller, then `npx electron-builder --win nsis --x64`.
+
+## Environment
+Vercel: `VITE_JARVIS_CLOUD_API_URL=https://jarvis-cloud-ai-api.onrender.com`.
+Render: `GROQ_API_KEY` (private) and `GROQ_MODEL=openai/gpt-oss-120b`.

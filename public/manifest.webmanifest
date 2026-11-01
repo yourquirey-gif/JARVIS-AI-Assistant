@@ -2,7 +2,7 @@
   "id": "/",
   "name": "ULTRON — Personal AI Assistant",
   "short_name": "ULTRON",
-  "description": "A voice-first personal AI assistant with a holographic interface.",
+  "description": "ULTRON voice assistant with an animated metallic hologram.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

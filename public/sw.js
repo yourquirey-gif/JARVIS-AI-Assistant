@@ -1,4 +1,4 @@
-const CACHE = "ultron-shell-v3";
+const CACHE = "ultron-shell-v4";
 const SHELL = ["/", "/manifest.webmanifest", "/ultron-icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
@@ -12,7 +12,6 @@ self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
-  // Installer binaries are intentionally not cached; they download from the same-origin website.
   if (url.pathname.startsWith("/downloads/")) return;
   event.respondWith(fetch(event.request).catch(() => {
     if (event.request.mode === "navigate") return caches.match("/");

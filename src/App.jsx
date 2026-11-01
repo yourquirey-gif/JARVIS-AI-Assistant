@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { Capacitor } from "@capacitor/core";
+import { SpeechRecognition } from "@capacitor-community/speech-recognition";
 import UltronStage from "./UltronStage.jsx";
 import {
   Activity, AudioLines, Bot, Bell, Bluetooth, ExternalLink, MapPin, Mic, MicOff,
@@ -9,8 +11,11 @@ import {
 const DEFAULT_AGENT = "http://127.0.0.1:8765";
 const CLOUD_API = (import.meta.env.VITE_JARVIS_CLOUD_API_URL || "").replace(/\/$/, "");
 // Same-origin download: custom domains automatically use their own host.
-const DESKTOP_DOWNLOAD = "/downloads/ULTRON-Desktop.exe";
-const IS_MOBILE_DEVICE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+const WINDOWS_DOWNLOAD = "/downloads/ULTRON-Windows-Setup.exe";
+const ANDROID_DOWNLOAD = "/downloads/ULTRON-Android.apk";
+const IS_NATIVE_ANDROID = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
+const IS_MOBILE_DEVICE = IS_NATIVE_ANDROID || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+const IS_NATIVE_DESKTOP = typeof window !== "undefined" && Boolean(window.ultronDesktop?.isNativeDesktop);
 const ACKNOWLEDGEMENTS = [
   "Understood, sir. Initiating your command now.",
   "Certainly, sir. Executing your request.",
@@ -35,6 +40,9 @@ export default function App() {
   const [agent, setAgent] = useState("offline");
   const [permissions, setPermissions] = useState({ microphone: false, location: false, notifications: false, bluetooth: false });
   const [showPerms, setShowPerms] = useState(false);
+  const [showDownloads, setShowDownloads] = useState(false);
+  const [downloadPlatform, setDownloadPlatform] = useState("");
+  const [downloadWindowsVersion, setDownloadWindowsVersion] = useState("");
   const [listening, setListening] = useState(false);
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -62,6 +70,7 @@ export default function App() {
   const speechHandlerRef = useRef(null);
   const ackRef = useRef("");
   const restartTimer = useRef(null);
+  const nativeRecognitionRunning = useRef(false);
 
   const setArmState = (value) => {
     armedRef.current = value;
@@ -120,6 +129,21 @@ export default function App() {
       setAgent("offline");
       setAutomationEnabled(false);
       return;
+    }
+    if (IS_NATIVE_DESKTOP) {
+      try {
+        const access = await window.ultronDesktop.getPcAccessStatus();
+        if (!access?.allowed) {
+          setPairedToken("");
+          setAgent("offline");
+          setAutomationEnabled(false);
+          return;
+        }
+      } catch {
+        setAgent("offline");
+        setAutomationEnabled(false);
+        return;
+      }
     }
     try {
       const base = agentUrl.replace(/\/$/, "");
@@ -325,6 +349,68 @@ export default function App() {
   speechHandlerRef.current = onRecognizedSpeech;
 
   useEffect(() => {
+    if (!IS_NATIVE_ANDROID) return undefined;
+    let active = true;
+    (async () => {
+      try {
+        const available = await SpeechRecognition.available();
+        if (!available?.available) {
+          if (active) setError("Android speech recognition is not available on this device. Text chat remains available.");
+          return;
+        }
+        const permission = await SpeechRecognition.checkPermissions();
+        if (active && permission?.speechRecognition !== "granted") {
+          await grantMic();
+        } else if (active) {
+          setPerm("microphone", true);
+        }
+      } catch (e) {
+        if (active) setError(e.message || "Could not request microphone permission.");
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!IS_NATIVE_DESKTOP || !window.ultronDesktop?.onPcStatus) return undefined;
+    const unsubscribe = window.ultronDesktop.onPcStatus((value) => {
+      if (value?.allowed) {
+        checkAgent();
+      } else {
+        setPairedToken("");
+        setAgent("offline");
+        setAutomationEnabled(false);
+      }
+    });
+    return () => unsubscribe?.();
+  }, []);
+
+  useEffect(() => {
+    if (!IS_NATIVE_DESKTOP || !window.ultronDesktop?.getMicrophoneStatus) return undefined;
+    window.ultronDesktop.getMicrophoneStatus().then((value) => {
+      if (value?.allowed) setPerm("microphone", true);
+    }).catch(() => {});
+  }, []);
+
+  const requestDesktopPcAccess = async () => {
+    if (!IS_NATIVE_DESKTOP) return;
+    try {
+      const result = await window.ultronDesktop.requestPcAccess();
+      if (result?.allowed) {
+        add("system", "PC connection allowed. ULTRON is connecting to this computer.");
+        await checkAgent();
+      } else {
+        setPairedToken("");
+        setAgent("offline");
+        setAutomationEnabled(false);
+        add("system", "PC connection denied. No local PC service was started.");
+      }
+    } catch (e) {
+      setError(e.message || "Could not request PC connection permission.");
+    }
+  };
+
+  useEffect(() => {
     checkAgent();
     const interval = window.setInterval(checkAgent, 15000);
     return () => window.clearInterval(interval);
@@ -336,6 +422,7 @@ export default function App() {
       armedRef.current = false;
       if (restartTimer.current) window.clearTimeout(restartTimer.current);
       try { rec.current?.stop(); } catch {}
+      if (IS_NATIVE_ANDROID) SpeechRecognition.stop().catch(() => {});
       try { window.speechSynthesis?.cancel(); } catch {}
       try { sessionStorage.removeItem("ultron-pairing-key"); } catch {}
       setListening(false);
@@ -396,6 +483,10 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (IS_NATIVE_ANDROID) {
+      rec.current = null;
+      return undefined;
+    }
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!Recognition) return;
     const recognition = new Recognition();
@@ -447,12 +538,29 @@ export default function App() {
 
   const grantMic = async () => {
     try {
+      if (IS_NATIVE_ANDROID) {
+        const available = await SpeechRecognition.available();
+        if (!available?.available) throw new Error("Speech recognition is not available on this Android device.");
+        const permission = await SpeechRecognition.requestPermissions();
+        const granted = permission?.speechRecognition === "granted";
+        setPerm("microphone", granted);
+        if (!granted) throw new Error("Microphone permission was denied. You can allow it later in Android settings.");
+        setError("");
+        return;
+      }
+      if (IS_NATIVE_DESKTOP && window.ultronDesktop?.requestMicrophone) {
+        const permission = await window.ultronDesktop.requestMicrophone();
+        setPerm("microphone", Boolean(permission?.allowed));
+        if (!permission?.allowed) throw new Error("Microphone permission was denied.");
+        setError("");
+        return;
+      }
       const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStream.getTracks().forEach((track) => track.stop());
       setPerm("microphone", true);
       setError("");
-    } catch {
-      setError("Microphone permission was not granted.");
+    } catch (e) {
+      setError(e.message || "Microphone permission was not granted.");
     }
   };
   const grantLocation = () => {
@@ -488,14 +596,36 @@ export default function App() {
     }
   };
 
+  const startAndroidRecognition = async () => {
+    if (nativeRecognitionRunning.current) return;
+    nativeRecognitionRunning.current = true;
+    try {
+      while (listeningRef.current) {
+        const result = await SpeechRecognition.start({
+          language: lang,
+          maxResults: 1,
+          partialResults: false,
+          popup: false
+        });
+        const phrase = result?.matches?.[0]?.trim();
+        if (phrase && listeningRef.current) {
+          setTranscript(phrase);
+          speechHandlerRef.current?.(phrase);
+        }
+        if (listeningRef.current) await new Promise((resolve) => window.setTimeout(resolve, 150));
+      }
+    } catch (e) {
+      if (listeningRef.current) setError(e?.message || "Android speech recognition stopped.");
+    } finally {
+      nativeRecognitionRunning.current = false;
+      try { await SpeechRecognition.stop(); } catch {}
+    }
+  };
+
   const toggleMic = async () => {
     if (!permissions.microphone) {
-      setError("First grant microphone permission in Permissions.");
+      setError("First allow microphone permission in Permissions.");
       setShowPerms(true);
-      return;
-    }
-    if (!rec.current) {
-      setError("Speech recognition is not supported in this browser. Use a supported Chrome or Edge version.");
       return;
     }
     if (listening) {
@@ -503,18 +633,32 @@ export default function App() {
       setListening(false);
       setArmState(false);
       setStatus("STANDBY");
-      try { rec.current.stop(); } catch {}
-    } else {
-      setError("");
-      listeningRef.current = true;
-      setListening(true);
-      setArmState(false);
-      setStatus("WAKE WORD ACTIVE");
-      try { rec.current.start(); } catch {
-        setError("Could not start microphone. Close another app using it and try again.");
-        listeningRef.current = false;
-        setListening(false);
+      if (IS_NATIVE_ANDROID) {
+        try { await SpeechRecognition.stop(); } catch {}
+      } else {
+        try { rec.current?.stop(); } catch {}
       }
+      return;
+    }
+    setError("");
+    listeningRef.current = true;
+    setListening(true);
+    setArmState(false);
+    setStatus("WAKE WORD ACTIVE");
+    if (IS_NATIVE_ANDROID) {
+      startAndroidRecognition();
+      return;
+    }
+    if (!rec.current) {
+      setError("Speech recognition is not supported in this browser. Use a supported Chrome or Edge version.");
+      listeningRef.current = false;
+      setListening(false);
+      return;
+    }
+    try { rec.current.start(); } catch {
+      setError("Could not start microphone. Close another app using it and try again.");
+      listeningRef.current = false;
+      setListening(false);
     }
   };
 
@@ -545,7 +689,8 @@ export default function App() {
         </div>
         <div className="state"><i className={agent === "paired" ? "online" : ""} />{IS_MOBILE_DEVICE ? "MOBILE MODE" : statusAgent}</div>
         <div className="actions">
-          <button onClick={checkAgent} title="Check companion"><RefreshCw /></button>
+          <button onClick={() => setShowDownloads(true)} title="Download ULTRON for your device"><Download /></button>
+          {!IS_MOBILE_DEVICE && <button onClick={checkAgent} title="Check companion"><RefreshCw /></button>}
           <button onClick={() => setShowPerms(true)} title="Permissions"><ShieldCheck /></button>
         </div>
       </header>
@@ -558,7 +703,7 @@ export default function App() {
             <span>{IS_MOBILE_DEVICE ? "Add ULTRON to your home screen for quick voice and AI access." : "Install ULTRON as a desktop app. PC control connects to the local companion."}</span>
           </div>
           <button className="primaryButton" onClick={installApp}>{installPrompt ? "INSTALL APP" : "HOW TO INSTALL"}</button>
-          {!IS_MOBILE_DEVICE && <a href={DESKTOP_DOWNLOAD} className="subtleLink">PC companion</a>}
+          {!IS_MOBILE_DEVICE && <a href={WINDOWS_DOWNLOAD} className="subtleLink">PC companion</a>}
           <button className="iconButton" onClick={dismissInstall} aria-label="Dismiss install prompt"><X /></button>
         </section>
       )}
@@ -568,8 +713,71 @@ export default function App() {
             <h3>INSTALL ULTRON <button onClick={() => setInstallHelp(false)}><X /></button></h3>
             <p>{IS_MOBILE_DEVICE ? "On Android, open the browser menu and choose “Install app” or “Add to Home screen”. On iPhone, use Share → Add to Home Screen. The installed ULTRON app gives you the mobile-friendly voice and AI interface." : "In Chrome or Edge, open the browser menu and choose “Install ULTRON” or “Apps → Install this site as an app”."}</p>
             {!IS_MOBILE_DEVICE && <p>For Windows PC controls, install the companion below and keep it running. ULTRON will detect and pair with it automatically when this trusted website opens.</p>}
-            {!IS_MOBILE_DEVICE && <a className="primaryButton linkButton" href={DESKTOP_DOWNLOAD}><Download /> DOWNLOAD WINDOWS COMPANION</a>}
+            {!IS_MOBILE_DEVICE && <a className="primaryButton linkButton" href={WINDOWS_DOWNLOAD}><Download /> DOWNLOAD WINDOWS COMPANION</a>}
             <button className="secondaryButton" onClick={() => setInstallHelp(false)}>CLOSE</button>
+          </section>
+        </div>
+      )}
+
+      {showDownloads && (
+        <div className="veil" onClick={() => setShowDownloads(false)}>
+          <section className="modal panel deviceDownloadModal" onClick={(event) => event.stopPropagation()}>
+            <h3>DOWNLOAD ULTRON <button onClick={() => setShowDownloads(false)}><X /></button></h3>
+            {!downloadPlatform && (
+              <>
+                <p className="modalLead">Choose your device. ULTRON has the same assistant experience, with controls tuned to each platform.</p>
+                <div className="deviceChoices">
+                  <button onClick={() => setDownloadPlatform("windows")}><Monitor /><b>Windows PC</b><small>Windows 7 · 8.1 · 10 · 11</small><span>DESKTOP INSTALLER</span></button>
+                  <button onClick={() => setDownloadPlatform("android")}><Smartphone /><b>Android phone</b><small>Separate native Android app</small><span>APK DOWNLOAD</span></button>
+                  <button onClick={() => setDownloadPlatform("iphone")}><Smartphone /><b>Apple iPhone</b><small>Safari home-screen app</small><span>ADD TO HOME SCREEN</span></button>
+                </div>
+              </>
+            )}
+            {downloadPlatform === "windows" && (
+              <div className="downloadChoiceDetail">
+                <button className="backLink" onClick={() => { setDownloadPlatform(""); setDownloadWindowsVersion(""); }}>← ALL DEVICES</button>
+                <h4>SELECT YOUR WINDOWS VERSION</h4>
+                <div className="windowsVersions">
+                  {["Windows 7", "Windows 8 / 8.1", "Windows 10", "Windows 11"].map((version) => (
+                    <button className={downloadWindowsVersion === version ? "selected" : ""} key={version} onClick={() => setDownloadWindowsVersion(version)}>
+                      <Monitor /><span>{version}</span><i>{downloadWindowsVersion === version ? "SELECTED" : "SELECT"}</i>
+                    </button>
+                  ))}
+                </div>
+                {downloadWindowsVersion && (
+                  <div className="selectedDownload">
+                    <b>{downloadWindowsVersion} · ULTRON Desktop App</b>
+                    <small>{downloadWindowsVersion === "Windows 7" || downloadWindowsVersion === "Windows 8 / 8.1" ? "Legacy Windows build uses Electron 22 / Chromium 108. Older Windows releases are no longer security-supported; use at your own risk." : "64-bit Windows desktop installer. PC access is requested with an Allow / Deny prompt when the app opens."}</small>
+                    <a className="primaryButton downloadBig" href={WINDOWS_DOWNLOAD}><Download /> DOWNLOAD WINDOWS INSTALLER</a>
+                  </div>
+                )}
+                <p className="versionNote">There was no Windows 9 release. Windows 8.1 was the version between Windows 7 and Windows 10.</p>
+              </div>
+            )}
+            {downloadPlatform === "android" && (
+              <div className="downloadChoiceDetail">
+                <button className="backLink" onClick={() => setDownloadPlatform("")}>← ALL DEVICES</button>
+                <h4>ULTRON FOR ANDROID</h4>
+                <p className="modalLead">A separate native Android app with the same AI, ULTRON hologram and Hindi/English voice interface. Android will ask for microphone permission on first launch.</p>
+                <div className="apkInfo"><Smartphone /><div><b>ULTRON Android APK</b><small>Direct install · Android may ask you to allow installation from your browser or file manager.</small></div></div>
+                <a className="primaryButton downloadBig" href={ANDROID_DOWNLOAD}><Download /> DOWNLOAD ANDROID APK</a>
+              </div>
+            )}
+            {downloadPlatform === "iphone" && (
+              <div className="downloadChoiceDetail">
+                <button className="backLink" onClick={() => setDownloadPlatform("")}>← ALL DEVICES</button>
+                <h4>ULTRON FOR IPHONE</h4>
+                <p className="modalLead">Install ULTRON as a home-screen web app. A signed iOS App Store application is not published yet.</p>
+                <ol className="iosSteps">
+                  <li>Open this website in Safari.</li>
+                  <li>Tap the Share icon.</li>
+                  <li>Choose “Add to Home Screen”.</li>
+                  <li>Open ULTRON and allow the microphone when starting voice commands.</li>
+                </ol>
+                <button className="primaryButton downloadBig" onClick={() => { setShowDownloads(false); setShowInstall(true); setInstallHelp(true); }}><Smartphone /> IPHONE INSTALL GUIDE</button>
+              </div>
+            )}
+            <p className="privacy"><ShieldCheck /> Microphone is requested separately. Only the Windows app can request local PC connection permission. No permission is granted silently.</p>
           </section>
         </div>
       )}
@@ -640,22 +848,24 @@ export default function App() {
               onMicClick={toggleMic}
             />
           </div>
-          <div className="heroControls">
-            <button className={listening ? "controlActive" : ""} onClick={toggleMic}>
-              {listening ? <MicOff /> : <Mic />} {listening ? "STOP LISTENING" : "ACTIVATE VOICE"}
+          <div className="codepenVoiceDock">
+            <button className={"codepenMic " + (listening ? "active" : "")} onClick={toggleMic} aria-label={listening ? "Stop listening" : "Start voice listening"}>
+              {listening ? <MicOff /> : <Mic />}
             </button>
-            <button onClick={() => {
+            <div className="codepenVoiceText">
+              <b>{listening ? (armed ? "ULTRON IS LISTENING" : "SPEAK NOW") : speaking ? "ULTRON IS SPEAKING" : "SAY “HELLO ULTRON” TO START"}</b>
+              <span>{transcript || (listening ? "Give your command in Hindi or English" : "Tap the microphone to activate voice commands")}</span>
+            </div>
+            <button className="voiceIconButton" onClick={() => {
               const next = !muted;
               setMuted(next);
               if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
               if (next) setSpeaking(false);
-            }}>
-              {muted ? <VolumeX /> : <Volume2 />} {muted ? "UNMUTE" : "VOICE OUTPUT"}
-            </button>
-            <button onClick={() => setShowPerms(true)}><ShieldCheck /> PERMISSIONS</button>
+            }} title={muted ? "Unmute voice" : "Mute voice"}>{muted ? <VolumeX /> : <Volume2 />}</button>
+            <button className="voiceIconButton" onClick={() => setShowPerms(true)} title="Permissions"><ShieldCheck /></button>
           </div>
           <div className="heroFooter">
-            <span>{transcript || (listening ? "Say “Hello Ultron” or “Hey Ultron”" : "Voice interface standing by")}</span>
+            <span>ULTRON VOICE INTERFACE · {IS_NATIVE_ANDROID ? "ANDROID APP" : IS_NATIVE_DESKTOP ? "WINDOWS DESKTOP APP" : IS_MOBILE_DEVICE ? "MOBILE WEB APP" : "DESKTOP WEB"}</span>
             <label>VOICE
               <select value={lang} onChange={(event) => setLang(event.target.value)}>
                 <option value="en-IN">EN-IN</option>
@@ -758,8 +968,8 @@ export default function App() {
                 </>
               )}
             </div>
-            {!IS_MOBILE_DEVICE && <a className="downloadLink" href={DESKTOP_DOWNLOAD}><Download /> WINDOWS COMPANION</a>}
-            {IS_MOBILE_DEVICE && <p className="mobileHint">MOBILE MODE · Install ULTRON on your home screen for voice and AI access. Windows PC actions run from the ULTRON app on the computer.</p>}
+            {!IS_MOBILE_DEVICE && <a className="downloadLink" href={WINDOWS_DOWNLOAD}><Download /> WINDOWS COMPANION</a>}
+            {IS_MOBILE_DEVICE && <p className="mobileHint">MOBILE MODE · Android app has native voice permission. iPhone uses Safari Add to Home Screen. Windows PC control is available in the desktop app.</p>}
           </section>
         </aside>
       </section>
@@ -772,20 +982,21 @@ export default function App() {
         <div className="veil" onClick={() => setShowPerms(false)}>
           <section className="modal panel" onClick={(event) => event.stopPropagation()}>
             <h3>PERMISSION CENTER <button onClick={() => setShowPerms(false)}><X /></button></h3>
-            <p className="modalLead">Grant only the permissions you choose. PC control needs the separate Windows companion.</p>
+            <p className="modalLead">{IS_NATIVE_ANDROID ? "ULTRON needs microphone permission for voice commands. You can deny it and still use text chat." : IS_NATIVE_DESKTOP ? "ULTRON asks separately for PC connection and microphone permission. Denying either keeps that feature off." : "Grant only the browser permissions you choose. PC access is available in the native Windows app."}</p>
             <div className="permission"><Mic /><div><b>Microphone</b><small>Wake-word detection and voice commands while this app is open</small></div><button onClick={grantMic}>{permissions.microphone ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><MapPin /><div><b>Location</b><small>Only used when you request a location feature</small></div><button onClick={grantLocation}>{permissions.location ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><Bell /><div><b>Notifications</b><small>Optional ULTRON alerts</small></div><button onClick={grantNotifications}>{permissions.notifications ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><Bluetooth /><div><b>Bluetooth</b><small>Optional browser device chooser where supported</small></div><button onClick={grantBluetooth}>{permissions.bluetooth ? "GRANTED" : "ALLOW"}</button></div>
-            {!IS_MOBILE_DEVICE && <div className="permission"><Monitor /><div><b>Windows PC companion</b><small>Runs locally and keeps PC actions on your own computer</small></div><a href={DESKTOP_DOWNLOAD}>DOWNLOAD</a></div>}
+            {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <div className="permission"><Monitor /><div><b>Windows desktop app</b><small>Dedicated app with local PC Allow/Deny connection</small></div><a href={WINDOWS_DOWNLOAD}>DOWNLOAD</a></div>}
             <div className="pair" id="agent-connect">
-              <b>{IS_MOBILE_DEVICE ? "WINDOWS PC CONTROL" : "AUTOMATIC PC CONNECTION"}</b>
-              <small>{IS_MOBILE_DEVICE ? "PC control is available when ULTRON is opened on the Windows computer with its companion running." : "Keep ULTRON PC Companion running on this computer. The trusted ULTRON website will discover it and pair automatically—no key copy/paste."}</small>
+              <b>{IS_MOBILE_DEVICE ? "WINDOWS PC CONTROL" : IS_NATIVE_DESKTOP ? "DESKTOP PC CONNECTION" : "AUTOMATIC PC CONNECTION"}</b>
+              <small>{IS_MOBILE_DEVICE ? "PC control runs from ULTRON on your Windows computer. The Android app controls this phone's own voice and AI interface." : IS_NATIVE_DESKTOP ? "Allow starts the private local service and automatically pairs ULTRON. Deny leaves PC control off. Closing the desktop app stops its service." : "The native Windows app connects automatically after you allow PC access."}</small>
               <div className="pairStatus">
                 <i className={agent === "paired" ? "connected" : ""} />
                 <span>{agent === "paired" ? "PC CONNECTED" : agent === "disabled" ? "PC ACTIONS DISABLED" : agent === "available" ? "COMPANION FOUND · WAITING FOR TRUSTED PAIR" : "LOOKING FOR WINDOWS COMPANION"}</span>
               </div>
-              {!IS_MOBILE_DEVICE && <button onClick={checkAgent}><RefreshCw /> FIND MY PC AUTOMATICALLY</button>}
+              {IS_NATIVE_DESKTOP && agent !== "paired" && <button onClick={requestDesktopPcAccess}><ShieldCheck /> ALLOW PC CONNECTION</button>}
+              {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <button onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>}
               {agent === "disabled" && <small className="warningText">Enable approved PC actions inside the Windows companion and restart it.</small>}
               <details className="manualPair">
                 <summary>Advanced connection settings</summary>
@@ -795,7 +1006,7 @@ export default function App() {
               </details>
             </div>
             <div className="modalActions">
-              {!IS_MOBILE_DEVICE && <a className="secondaryButton" href={DESKTOP_DOWNLOAD}><Download /> GET WINDOWS APP</a>}
+              {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <a className="secondaryButton" href={WINDOWS_DOWNLOAD}><Download /> GET WINDOWS APP</a>}
               <button className="secondaryButton" onClick={checkAgent}><RefreshCw /> CHECK CONNECTION</button>
             </div>
             <p className="privacy"><ShieldCheck /> ULTRON resets its own permission switches and pairing session when closed. Browser and Windows permissions may remain saved until you revoke them in browser settings. Every PC action still asks for confirmation.</p>

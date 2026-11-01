@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import Ultron3DStage from "./Ultron3DStage.jsx";
 
 /*
  * Lightweight ULTRON hologram renderer.
@@ -284,7 +285,14 @@ export default function UltronStage({
 }) {
   const canvasRef = useRef(null);
   const [canvasAvailable, setCanvasAvailable] = useState(true);
+  const [webglReady, setWebglReady] = useState(false);
   const [effectiveMode, setEffectiveMode] = useState("high");
+  const speakingRef = useRef(speaking);
+  const listeningRef = useRef(listening);
+  const speechTickRef = useRef(speechTick);
+  speakingRef.current = speaking;
+  listeningRef.current = listening;
+  speechTickRef.current = speechTick;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -304,7 +312,7 @@ export default function UltronStage({
     const reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     const hardware = navigator.hardwareConcurrency || 2;
     const memory = navigator.deviceMemory || 4;
-    const autoLow = hardware <= 2 || memory <= 4;
+    const autoLow = hardware <= 2 || memory <= 2;
     const mode = quality === "auto" ? (autoLow ? "low" : "high") : quality;
     const low = mode === "low";
     setEffectiveMode(mode);
@@ -368,7 +376,7 @@ export default function UltronStage({
       ctx.beginPath(); ctx.ellipse(0, 0, 124, 61, 0, 0, Math.PI * 2); ctx.stroke();
       ctx.restore();
       if (!reduceMotion) {
-        drawRobot(ctx, seconds, speaking, listening, !low, speechTick);
+        drawRobot(ctx, seconds, speakingRef.current, listeningRef.current, !low, speechTickRef.current);
       } else {
         drawRobot(ctx, 0, false, false, false, 0);
       }
@@ -388,15 +396,16 @@ export default function UltronStage({
       if (observer) observer.disconnect();
       else window.removeEventListener("resize", resize);
     };
-  }, [speaking, listening, thinking, speechTick, quality]);
+  }, [quality]);
 
   return (
     <div className={"ultronVisual " + (speaking ? "isSpeaking " : "") + (listening ? "isListening" : "")} onClick={onMicClick} role="button" tabIndex={0} aria-label="Toggle ULTRON voice listening" onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onMicClick(); }}>
       <div className="avatarAura" />
+      <Ultron3DStage speaking={speaking} listening={listening} quality={quality} onReady={() => setWebglReady(true)} onFallback={() => setWebglReady(false)} />
       {canvasAvailable ? (
-        <canvas ref={canvasRef} className="ultronCanvas" aria-label="Animated metallic ULTRON hologram" />
+        <canvas ref={canvasRef} className="ultronCanvas" style={{ display: webglReady ? "none" : "block" }} aria-label="Lightweight animated metallic ULTRON hologram" />
       ) : (
-        <div className="avatarFallback"><div className="fallbackHead"><i /><b /><em /></div><strong>ULTRON</strong></div>
+        !webglReady && <div className="avatarFallback"><div className="fallbackHead"><i /><b /><em /></div><strong>ULTRON</strong></div>
       )}
       <div className="visualName">ULTRON</div>
       <div className="visualStatus">{speaking ? "VOICE OUTPUT · ANIMATING" : listening ? "VOICE INPUT · LISTENING" : thinking ? "NEURAL PROCESSING" : "AWAITING COMMAND"}</div>

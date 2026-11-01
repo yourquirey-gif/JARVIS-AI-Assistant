@@ -1,0 +1,63 @@
+name: Build ULTRON Windows Desktop App
+on:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - "desktop/**"
+      - "src/**"
+      - "package.json"
+      - "vite.config.js"
+      - ".github/workflows/build-ultron-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ultron-installer-publish
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.8.10"
+      - name: Install Node dependencies
+        run: npm install --no-audit --no-fund
+      - name: Build ULTRON web interface
+        env:
+          VITE_JARVIS_CLOUD_API_URL: https://jarvis-cloud-ai-api.onrender.com
+        run: npm run build
+      - name: Build private localhost PC service
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r backend/requirements.txt
+          python -m pip install pyinstaller==5.13.2
+          pyinstaller --noconfirm --clean --onefile --noconsole --name ULTRON-PC-Service --paths backend --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all pydantic --collect-all psutil --collect-all dotenv backend/local_service.py
+      - name: Package native Windows app
+        run: npx electron-builder --win nsis --x64
+      - name: Publish installer to the Vercel website origin
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: |
+          $installer = "desktop-release/ULTRON-Windows-Setup.exe"
+          if (!(Test-Path $installer)) { throw "Windows installer was not created." }
+          New-Item -ItemType Directory -Force -Path "public/downloads" | Out-Null
+          Copy-Item $installer "public/downloads/ULTRON-Windows-Setup.exe" -Force
+          if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main
+          git add -A public/downloads/
+          git commit -m "chore: publish native ULTRON Windows installer for Vercel"
+          git push origin HEAD:main
