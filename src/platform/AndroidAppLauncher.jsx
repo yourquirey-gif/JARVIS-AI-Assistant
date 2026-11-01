@@ -16,7 +16,7 @@ export const ANDROID_APP_CATALOG = [
   { id: "settings", name: "Settings", packageName: "com.android.settings", aliases: ["settings", "सेटिंग", "सेटिंग्स"], icon: Settings }
 ];
 
-const PACKAGE_PATTERN = /^[A-Za-z][A-Za-z0-9_]*(?:\\.[A-Za-z0-9_]+)+$/;
+const PACKAGE_PATTERN = /^[A-Za-z][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)+$/;
 
 export async function openAndroidApp(packageName) {
   if (!Capacitor.isNativePlatform() || Capacitor.getPlatform() !== "android") {
@@ -34,7 +34,7 @@ export async function openAndroidApp(packageName) {
 
 export function matchAndroidAppCommand(command) {
   const value = String(command || "").trim().toLocaleLowerCase();
-  const match = value.match(/^(?:please\\s+)?(?:open|launch|start|kholo|khol\\s*do|chalao|चालू\\s*करो|खोलो|खोल\\s*दो)\\s+(.+?)[.!?]*$/i);
+  const match = value.match(/^(?:please\s+)?(?:open|launch|start|kholo|khol\s*do|chalao|चालू\s*करो|खोलो|खोल\s*दो)\s+(.+?)[.!?]*$/i);
   if (!match) return null;
   const target = match[1].trim().replace(/[.!?]+$/, "");
   return ANDROID_APP_CATALOG.find((app) => app.aliases.some((alias) => alias.toLocaleLowerCase() === target)) || null;
