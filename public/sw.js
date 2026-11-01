@@ -1,4 +1,4 @@
-const CACHE = "ultron-shell-v4";
+const CACHE = "ultron-shell-v5";
 const SHELL = ["/", "/manifest.webmanifest", "/ultron-icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(SHELL)));
