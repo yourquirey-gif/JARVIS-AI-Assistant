@@ -66,9 +66,19 @@ jobs:
           test -f android/app/build/outputs/apk/debug/app-debug.apk
           mkdir -p public/downloads
           cp android/app/build/outputs/apk/debug/app-debug.apk public/downloads/ULTRON-Android.apk
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          package = json.loads(Path("package.json").read_text(encoding="utf-8"))
+          manifest_path = Path("public/app-updates/android.json")
+          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+          manifest["version"] = package["version"]
+          manifest["releaseNotes"] = "Native Android app update. Review and approve installation in Android when prompted."
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\\n", encoding="utf-8")
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add public/downloads/ULTRON-Android.apk
+          git add public/downloads/ULTRON-Android.apk public/app-updates/android.json
           git commit -m "chore: publish ULTRON Android APK for Vercel"
           for attempt in 1 2 3 4 5; do
             git pull --rebase origin main
