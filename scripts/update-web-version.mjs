@@ -1,14 +1,14 @@
-import json
-from pathlib import Path
+import { readFile, writeFile } from "node:fs/promises";
 
-root = Path(__file__).resolve().parent.parent
-package = json.loads((root / "package.json").read_text(encoding="utf-8"))
-manifest_path = root / "public" / "app-updates" / "web.json"
-manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-manifest["version"] = package["version"]
-manifest["releaseNotes"] = (
-    "ULTRON website update. Refresh the web app to load the latest interface, "
-    "permissions and voice features."
-)
-manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
-print(f"Web update manifest set to ULTRON {package['version']}")
+const packageUrl = new URL("../package.json", import.meta.url);
+const manifestUrl = new URL("../public/app-updates/web.json", import.meta.url);
+
+const packageInfo = JSON.parse(await readFile(packageUrl, "utf8"));
+const manifest = JSON.parse(await readFile(manifestUrl, "utf8"));
+
+manifest.version = packageInfo.version;
+manifest.releaseNotes =
+  "ULTRON website update. Refresh the web app to load the latest interface, permissions and voice features.";
+
+await writeFile(manifestUrl, JSON.stringify(manifest, null, 2) + "\n", "utf8");
+process.stdout.write(`Web update manifest set to ULTRON ${packageInfo.version}\n`);
