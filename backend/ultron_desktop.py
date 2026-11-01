@@ -62,6 +62,8 @@ class UltronDesktop:
         self._build()
         self._refresh_token()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        if self.enabled_var.get():
+            self.root.after(900, self.start_agent)
 
     def _build(self):
         style = ttk.Style()

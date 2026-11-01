@@ -28,7 +28,7 @@ jobs:
           pyinstaller --noconfirm --clean --onefile --windowed --name ULTRON-Desktop --paths backend --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all pydantic --collect-all psutil backend/ultron_desktop.py
       - name: Publish latest desktop executable
         env:
-          GH_TOKEN: ${${ github.token }}
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: |
           gh release view ultron-latest --repo $env:GITHUB_REPOSITORY
