@@ -650,6 +650,19 @@ export default function App() {
   }, [messages, pending]);
 
   useEffect(() => {
+    const loadPlatformReleases = async () => {
+      try {
+        const [androidResponse, windowsResponse] = await Promise.all([
+          fetch("/app-updates/android.json?check=" + Date.now(), { cache: "no-store" }),
+          fetch("/app-updates/windows.json?check=" + Date.now(), { cache: "no-store" })
+        ]);
+        if (androidResponse.ok) setAndroidRelease(await androidResponse.json());
+        if (windowsResponse.ok) setWindowsRelease(await windowsResponse.json());
+      } catch {
+        // Release labels are informational; an offline app still opens normally.
+      }
+    };
+    loadPlatformReleases();
     checkAppUpdate();
     const interval = window.setInterval(checkAppUpdate, 5 * 60 * 1000);
     window.addEventListener("focus", checkAppUpdate);
