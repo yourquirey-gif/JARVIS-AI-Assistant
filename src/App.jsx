@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { SpeechRecognition } from "@capacitor-community/speech-recognition";
+import { TextToSpeech } from "@capacitor-community/text-to-speech";
 import { AppLauncher } from "@capacitor/app-launcher";
 import UltronStage from "./UltronStage.jsx";
 import AndroidAppLauncher, { matchAndroidAppCommand, openAndroidApp } from "./platform/AndroidAppLauncher.jsx";
@@ -65,7 +66,7 @@ export default function App() {
   const [speechBeat, setSpeechBeat] = useState(0);
   const [visualQuality, setVisualQuality] = useState("auto");
   const [status, setStatus] = useState("STANDBY");
-  const [messages, setMessages] = useState([{ role: "assistant", text: "ULTRON online. Say “Hello Ultron” or “Hey Ultron” to get my attention." }]);
+  const [messages, setMessages] = useState([{ role: "assistant", text: "ULTRON online. Tap the microphone and speak a command. “Hello Ultron” is optional." }]);
   const [input, setInput] = useState("");
   const [transcript, setTranscript] = useState("");
   const [lang, setLang] = useState("en-IN");
@@ -78,6 +79,8 @@ export default function App() {
   const [showInstall, setShowInstall] = useState(false);
   const [installHelp, setInstallHelp] = useState(false);
   const [appUpdate, setAppUpdate] = useState(null);
+  const [androidRelease, setAndroidRelease] = useState(null);
+  const [windowsRelease, setWindowsRelease] = useState(null);
   const [dismissedUpdateVersion, setDismissedUpdateVersion] = useState("");
   const [checkingUpdate, setCheckingUpdate] = useState(false);
   const rec = useRef(null);
@@ -122,7 +125,10 @@ export default function App() {
           installedVersion = APP_VERSION;
         }
       }
-      if (release?.version && compareVersions(release.version, installedVersion) > 0 && release.version !== dismissedUpdateVersion) {
+      if (platform === "android") setAndroidRelease(release);
+      if (platform === "windows") setWindowsRelease(release);
+      const cleanInstallRequired = platform === "android" && release?.installMode === "clean_install";
+      if (!cleanInstallRequired && release?.version && compareVersions(release.version, installedVersion) > 0 && release.version !== dismissedUpdateVersion) {
         setAppUpdate({ ...release, platform, installedVersion });
       } else {
         setAppUpdate(null);
@@ -166,6 +172,7 @@ export default function App() {
       try { await SpeechRecognition.stop(); } catch {}
     }
     try { window.speechSynthesis?.cancel(); } catch {}
+    if (IS_NATIVE_ANDROID) { try { await TextToSpeech.stop(); } catch {} }
     setListening(false);
     setArmState(false);
     setSpeaking(false);
@@ -184,35 +191,65 @@ export default function App() {
     add("system", "ULTRON access revoked: active listening stopped, app permissions cleared, and local PC pairing disconnected.");
   };
 
-  const speak = (text) => {
-    if (!("speechSynthesis" in window) || !text) return;
-    if (muted) {
+  const speak = async (text) => {
+    const spokenText = String(text || "").trim();
+    if (!spokenText || muted) {
       setSpeaking(false);
       return;
     }
-    window.speechSynthesis.cancel();
-    setSpeaking(false);
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.onstart = () => setSpeaking(true);
-    utterance.onboundary = () => setSpeechBeat((value) => value + 1);
-    utterance.onend = () => setSpeaking(false);
-    utterance.onerror = () => setSpeaking(false);
-    utterance.lang = lang;
-    utterance.rate = 0.88;
-    utterance.pitch = 0.68;
-    utterance.volume = 1;
-    const voices = window.speechSynthesis.getVoices() || [];
-    const base = lang.toLowerCase().split("-")[0];
-    const matching = voices.filter((voice) => (voice.lang || "").toLowerCase().startsWith(base));
-    const masculineName = /(male|david|mark|guy|alex|daniel|ravi|george|james|tom|aaron|arthur|fred|microsoft.*male)/i;
-    const feminineName = /(female|zira|susan|samantha|heera|veena|karen)/i;
-    const selected = matching.find((voice) => masculineName.test(voice.name))
-      || voices.find((voice) => masculineName.test(voice.name))
-      || matching.find((voice) => !feminineName.test(voice.name))
-      || matching[0]
-      || voices[0];
-    if (selected) utterance.voice = selected;
-    window.speechSynthesis.speak(utterance);
+
+    // Android WebView speechSynthesis can be absent or silent on some devices.
+    // Use Android's native TTS engine first, then fall back to browser speech.
+    if (IS_NATIVE_ANDROID) {
+      try {
+        try { await TextToSpeech.stop(); } catch {}
+        setSpeaking(true);
+        await TextToSpeech.speak({
+          text: spokenText,
+          lang,
+          rate: 0.9,
+          pitch: 0.82,
+          volume: 1,
+          queueStrategy: 0
+        });
+        setSpeechBeat((value) => value + 1);
+        setSpeaking(false);
+        return;
+      } catch (nativeError) {
+        setSpeaking(false);
+        console.warn("ULTRON native TTS failed; trying browser TTS.", nativeError);
+      }
+    }
+
+    if (!("speechSynthesis" in window)) {
+      setError("Voice output is unavailable on this device. Text replies are still shown on screen.");
+      setSpeaking(false);
+      return;
+    }
+    try {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      const utterance = new SpeechSynthesisUtterance(spokenText);
+      utterance.onstart = () => setSpeaking(true);
+      utterance.onboundary = () => setSpeechBeat((value) => value + 1);
+      utterance.onend = () => setSpeaking(false);
+      utterance.onerror = () => setSpeaking(false);
+      utterance.lang = lang;
+      utterance.rate = 0.9;
+      utterance.pitch = 0.78;
+      utterance.volume = 1;
+      const voices = window.speechSynthesis.getVoices() || [];
+      const base = lang.toLowerCase().split("-")[0];
+      const matching = voices.filter((voice) => (voice.lang || "").toLowerCase().startsWith(base));
+      const selected = matching.find((voice) => /(male|david|mark|guy|alex|daniel|ravi|george|james|tom|aaron|arthur|fred)/i.test(voice.name))
+        || matching[0]
+        || voices[0];
+      if (selected) utterance.voice = selected;
+      window.speechSynthesis.speak(utterance);
+    } catch (error) {
+      setSpeaking(false);
+      setError(error?.message || "ULTRON could not speak this reply.");
+    }
   };
 
   const localFetch = async (path, options = {}) => {
@@ -407,7 +444,12 @@ export default function App() {
       speak(reply);
       setStatus("READY");
     } catch (e) {
-      add("system", e.message || "Request failed.");
+      const detail = e.message || "Request failed.";
+      add("system", detail);
+      const voiceError = lang.startsWith("hi")
+        ? "माफ़ कीजिए, आपका command पूरा नहीं हो पाया। " + detail
+        : "Sorry, I couldn't complete that command. " + detail;
+      speak(voiceError);
       setStatus("REQUEST FAILED");
     } finally {
       setBusy(false);
@@ -449,27 +491,44 @@ export default function App() {
     setStatus("READY");
   };
 
-  const onRecognizedSpeech = (spoken) => {
-    const phrase = spoken.trim();
+  const onRecognizedSpeech = async (spoken) => {
+    const phrase = String(spoken || "").trim();
     if (!phrase) return;
-    const wake = phrase.match(/\b(?:hello|hey|hyy|hi)\s+(?:ultron|ultra|alteron)\b/i);
+
+    const wake = phrase.match(/(?:hello|hey|hyy|hi|हेलो|हाय|नमस्ते)\s*(?:ultron|ultra|alteron|अल्ट्रॉन|अल्ट्रोन)/i);
     if (wake) {
       const remaining = phrase.slice(wake.index + wake[0].length).replace(/^[\s,!.:-]+/, "").trim();
-      setArmState(true);
       if (remaining) {
+        listeningRef.current = false;
+        setListening(false);
         setArmState(false);
-        sendCommand(remaining);
+        setStatus("THINKING");
+        if (IS_NATIVE_ANDROID) { try { await SpeechRecognition.stop(); } catch {} }
+        else { try { rec.current?.stop(); } catch {} }
+        await sendCommand(remaining);
       } else {
-        const greeting = "I'm listening, sir. What would you like me to do?";
+        setArmState(true);
+        setStatus("WAKE WORD HEARD · SAY COMMAND");
+        if (IS_NATIVE_ANDROID) { try { await SpeechRecognition.stop(); } catch {} }
+        const greeting = lang.startsWith("hi")
+          ? "जी, मैं सुन रहा हूँ। बताइए क्या करना है?"
+          : "I'm listening. What would you like me to do?";
         add("assistant", greeting);
-        speak(greeting);
-        setStatus("ULTRON ACTIVATED");
+        await speak(greeting);
       }
       return;
     }
-    if (armedRef.current) {
+
+    // The microphone button is an explicit tap-to-talk action. A wake phrase is
+    // optional: a direct command is processed immediately while listening.
+    if (armedRef.current || listeningRef.current) {
+      listeningRef.current = false;
+      setListening(false);
       setArmState(false);
-      sendCommand(phrase);
+      setStatus("THINKING");
+      if (IS_NATIVE_ANDROID) { try { await SpeechRecognition.stop(); } catch {} }
+      else { try { rec.current?.stop(); } catch {} }
+      await sendCommand(phrase);
     }
   };
   speechHandlerRef.current = onRecognizedSpeech;
@@ -736,7 +795,7 @@ export default function App() {
         const phrase = result?.matches?.[0]?.trim();
         if (phrase && listeningRef.current) {
           setTranscript(phrase);
-          speechHandlerRef.current?.(phrase);
+          await speechHandlerRef.current?.(phrase);
         }
         if (listeningRef.current) await new Promise((resolve) => window.setTimeout(resolve, 150));
       }
@@ -770,7 +829,7 @@ export default function App() {
     listeningRef.current = true;
     setListening(true);
     setArmState(false);
-    setStatus("WAKE WORD ACTIVE");
+    setStatus("LISTENING FOR COMMAND");
     if (IS_NATIVE_ANDROID) {
       startAndroidRecognition();
       return;
@@ -901,8 +960,9 @@ export default function App() {
                 <button className="backLink" onClick={() => setDownloadPlatform("")}>← ALL DEVICES</button>
                 <h4>ULTRON FOR ANDROID</h4>
                 <p className="modalLead">A separate native Android app with the same AI, ULTRON hologram and Hindi/English voice interface. Android will ask for microphone permission on first launch.</p>
-                <div className="apkInfo"><Smartphone /><div><b>ULTRON Android APK</b><small>Direct install · Android may ask you to allow installation from your browser or file manager.</small></div></div>
-                <a className="primaryButton downloadBig" href={ANDROID_DOWNLOAD}><Download /> DOWNLOAD ANDROID APK</a>
+                <div className="apkInfo"><Smartphone /><div><b>ULTRON Android APK · v{androidRelease?.version || APP_VERSION}</b><small>Direct install · Android may ask you to allow installation from your browser or file manager.</small></div></div>
+                {androidRelease?.installMode === "clean_install" && <p className="updateNote">This is the latest published APK, but it uses a new signing key. If an older ULTRON is installed, uninstall it once before installing this build. Future updates will use the permanent release key.</p>}
+                <a className="primaryButton downloadBig" href={ANDROID_DOWNLOAD}><Download /> DOWNLOAD LATEST APK · v{androidRelease?.version || APP_VERSION}</a>
               </div>
             )}
             {downloadPlatform === "iphone" && (
@@ -995,13 +1055,14 @@ export default function App() {
               {listening ? <MicOff /> : <Mic />}
             </button>
             <div className="codepenVoiceText">
-              <b>{listening ? (armed ? "ULTRON IS LISTENING" : "SPEAK NOW") : speaking ? "ULTRON IS SPEAKING" : "SAY “HELLO ULTRON” TO START"}</b>
-              <span>{transcript || (listening ? "Give your command in Hindi or English" : "Tap the microphone to activate voice commands")}</span>
+              <b>{listening ? (armed ? "WAKE WORD HEARD · SAY COMMAND" : "SPEAK YOUR COMMAND") : speaking ? "ULTRON IS SPEAKING" : "TAP MIC · THEN SPEAK"}</b>
+              <span>{transcript || (listening ? "Tap-to-talk is active. Wake phrase is optional." : "Tap the microphone, then speak in Hindi or English")}</span>
             </div>
             <button className="voiceIconButton" onClick={() => {
               const next = !muted;
               setMuted(next);
               if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+              if (next && IS_NATIVE_ANDROID) TextToSpeech.stop().catch(() => {});
               if (next) setSpeaking(false);
             }} title={muted ? "Unmute voice" : "Mute voice"}>{muted ? <VolumeX /> : <Volume2 />}</button>
             <button className="voiceIconButton" onClick={() => setShowPerms(true)} title="Permissions"><ShieldCheck /></button>
@@ -1129,7 +1190,7 @@ export default function App() {
               <div className="pair" id="phone-control">
                 <b>{IS_NATIVE_ANDROID ? "ANDROID PHONE CONTROL" : "MOBILE WEB / PWA"}</b>
                 <small>{IS_NATIVE_ANDROID
-                  ? "The Android app can open selected apps such as WhatsApp, YouTube, Chrome and Maps after your tap or a direct voice command. It does not read app screens or type into other apps in this release."
+                  ? "Tap the microphone and speak directly; no wake phrase is required. ULTRON can open selected apps such as WhatsApp, YouTube, Chrome and Maps. It does not read app screens or type into other apps in this release."
                   : "This screen is running in the mobile browser, not inside the native Android APK. Browser/PWA mode cannot launch or type inside other phone apps. Install the Android APK for native speech recognition."}</small>
                 {IS_NATIVE_ANDROID && <AndroidAppLauncher />}
                 {IS_NATIVE_ANDROID
