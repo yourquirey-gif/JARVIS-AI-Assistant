@@ -960,9 +960,9 @@ export default function App() {
                 <button className="backLink" onClick={() => setDownloadPlatform("")}>← ALL DEVICES</button>
                 <h4>ULTRON FOR ANDROID</h4>
                 <p className="modalLead">A separate native Android app with the same AI, ULTRON hologram and Hindi/English voice interface. Android will ask for microphone permission on first launch.</p>
-                <div className="apkInfo"><Smartphone /><div><b>ULTRON Android APK · v{androidRelease?.version || APP_VERSION}</b><small>Direct install · Android may ask you to allow installation from your browser or file manager.</small></div></div>
-                {androidRelease?.installMode === "clean_install" && <p className="updateNote">This is the latest published APK, but it uses a new signing key. If an older ULTRON is installed, uninstall it once before installing this build. Future updates will use the permanent release key.</p>}
-                <a className="primaryButton downloadBig" href={ANDROID_DOWNLOAD}><Download /> DOWNLOAD LATEST APK · v{androidRelease?.version || APP_VERSION}</a>
+                <div className="apkInfo"><Smartphone /><div><b>ULTRON Android APK · v{androidRelease?.publishedVersion || androidRelease?.version || APP_VERSION}</b><small>Latest APK published on this website · Direct install.</small></div></div>
+                {androidRelease?.installMode === "clean_install" && <p className="updateNote">This is the newest APK currently published. Because its signing key differs from the older installation, uninstall the old ULTRON once, then install this file. The app will use in-place updates after the permanent signing key is configured.</p>}
+                <a className="primaryButton downloadBig" href={ANDROID_DOWNLOAD}><Download /> DOWNLOAD LATEST APK · v{androidRelease?.publishedVersion || androidRelease?.version || APP_VERSION}</a>
               </div>
             )}
             {downloadPlatform === "iphone" && (
