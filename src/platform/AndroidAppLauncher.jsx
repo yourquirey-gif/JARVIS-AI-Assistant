@@ -9,8 +9,8 @@ export const ANDROID_APP_CATALOG = [
   { id: "chrome", name: "Chrome", packageName: "com.android.chrome", aliases: ["chrome", "क्रोम"], icon: Chrome },
   { id: "gmail", name: "Gmail", packageName: "com.google.android.gm", aliases: ["gmail", "जीमेल"], icon: Mail },
   { id: "maps", name: "Google Maps", packageName: "com.google.android.apps.maps", aliases: ["maps", "google maps", "गूगल मैप"], icon: MapPin },
-  { id: "phone", name: "Phone", packageName: "com.google.android.dialer", aliases: ["phone", "dialer", "फोन", "डायलर"], icon: Phone },
-  { id: "messages", name: "Messages", packageName: "com.google.android.apps.messaging", aliases: ["messages", "sms", "मैसेज"], icon: MessageCircle },
+  { id: "phone", name: "Phone", packageName: "com.google.android.dialer", fallbackPackages: ["com.samsung.android.dialer"], aliases: ["phone", "dialer", "फोन", "डायलर"], icon: Phone },
+  { id: "messages", name: "Messages", packageName: "com.google.android.apps.messaging", fallbackPackages: ["com.samsung.android.messaging"], aliases: ["messages", "sms", "मैसेज"], icon: MessageCircle },
   { id: "calculator", name: "Calculator", packageName: "com.google.android.calculator", fallbackPackages: ["com.sec.android.app.popupcalculator"], aliases: ["calculator", "calc", "कैलकुलेटर"], icon: Calculator },
   { id: "playstore", name: "Play Store", packageName: "com.android.vending", aliases: ["play store", "playstore", "प्ले स्टोर"], icon: Play },
   { id: "settings", name: "Settings", packageName: "com.android.settings", aliases: ["settings", "सेटिंग", "सेटिंग्स"], icon: Settings }
@@ -34,9 +34,10 @@ export async function openAndroidApp(packageName) {
 
 export function matchAndroidAppCommand(command) {
   const value = String(command || "").trim().toLocaleLowerCase();
-  const match = value.match(/^(?:please\s+)?(?:open|launch|start|kholo|khol\s*do|chalao|चालू\s*करो|खोलो|खोल\s*दो)\s+(.+?)[.!?]*$/i);
-  if (!match) return null;
-  const target = match[1].trim().replace(/[.!?]+$/, "");
+  const leading = value.match(/^(?:please\s+)?(?:open|launch|start|kholo|khol\s*do|chalao|चालू\s*करो|खोलो|खोल\s*दो)\s+(.+?)[.!?]*$/i);
+  const trailing = value.match(/^(.+?)\s+(?:kholo|khol\s*do|open\s*karo|चालू\s*करो|खोलो|खोल\s*दो)[.!?]*$/i);
+  const target = (leading?.[1] || trailing?.[1] || "").trim().replace(/[.!?]+$/, "");
+  if (!target) return null;
   return ANDROID_APP_CATALOG.find((app) => app.aliases.some((alias) => alias.toLocaleLowerCase() === target)) || null;
 }
 
