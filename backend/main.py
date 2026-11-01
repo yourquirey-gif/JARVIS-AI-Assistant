@@ -2,7 +2,6 @@ from __future__ import print_function
 import os
 import secrets
 import re
-import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -15,8 +14,6 @@ ORIGINS = [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "http://localhost:517
 app.add_middleware(CORSMiddleware, allow_origins=ORIGINS, allow_credentials=False,
                    allow_methods=["GET", "POST", "OPTIONS"], allow_headers=["Content-Type", "X-Jarvis-Token"])
 TOKEN = os.getenv("JARVIS_TOKEN", "")
-GROQ_KEY = os.getenv("GROQ_API_KEY", "")
-MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 AUTOMATION = os.getenv("ENABLE_AUTOMATION", "false").lower() == "true"
 
 class PairRequest(BaseModel):
@@ -69,27 +66,13 @@ def detect_action(text):
             return {"name": name, "args": {}, "description": "Read basic PC status and battery information"}
     return None
 
-async def ask_ai(text, language):
-    if not GROQ_KEY:
-        return "I am connected to your local agent. Add GROQ_API_KEY in backend/.env to enable AI conversations. I can currently recognize the approved local commands shown in the README."
-    system = "You are JARVIS, a helpful concise personal assistant. Reply in the user's language (Hindi or English). Do not claim to control the PC; actions require separate confirmation."
-    async with httpx.AsyncClient(timeout=35) as client:
-        response = await client.post("https://api.groq.com/openai/v1/chat/completions",
-            headers={"Authorization": "Bearer " + GROQ_KEY},
-            json={"model": MODEL, "messages": [{"role":"system","content":system},{"role":"user","content":text}], "temperature":0.3})
-        response.raise_for_status()
-        return response.json()["choices"][0]["message"].get("content") or "I am ready."
-
 @app.post("/api/command")
 async def command(data: Command, request: Request, x_jarvis_token: str = Header(default=None)):
     auth(request, x_jarvis_token)
     action = detect_action(data.message)
     if action:
         return {"proposed_action": action, "reply": "I need your permission before I do that."}
-    try:
-        return {"reply": await ask_ai(data.message, data.language), "proposed_action": None}
-    except httpx.HTTPError:
-        raise HTTPException(502, "Could not reach the AI provider. Check internet and GROQ_API_KEY.")
+    return {"needs_ai": True, "proposed_action": None}
 
 @app.post("/api/action/execute")
 async def execute(data: ActionRequest, request: Request, x_jarvis_token: str = Header(default=None)):
