@@ -1103,7 +1103,7 @@ export default function App() {
               <div className="pair" id="phone-control">
                 <b>{IS_NATIVE_ANDROID ? "ANDROID PHONE CONTROL" : "MOBILE WEB / PWA"}</b>
                 <small>{IS_NATIVE_ANDROID
-                  ? "Native Android speech recognition and voice output are available in this APK. Cross-app launch, screen reading and typing controls are not enabled yet. Any future automation will be limited to clearly defined, user-directed actions rather than an unrestricted autonomous controller."
+                  ? "The Android app can open selected apps such as WhatsApp, YouTube, Chrome and Maps after your tap or a direct voice command. It does not read app screens or type into other apps in this release."
                   : "This screen is running in the mobile browser, not inside the native Android APK. Browser/PWA mode cannot launch or type inside other phone apps. Install the Android APK for native speech recognition."}</small>
                 {IS_NATIVE_ANDROID && <AndroidAppLauncher />}
                 {IS_NATIVE_ANDROID
