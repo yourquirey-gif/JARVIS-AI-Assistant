@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ultron-installer-publish
+  group: ultron-artifact-release
   cancel-in-progress: false
 
 jobs:
