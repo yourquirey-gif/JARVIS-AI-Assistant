@@ -44,7 +44,7 @@ jobs:
           python -m pip install pyinstaller==5.13.2
           pyinstaller --noconfirm --clean --onefile --noconsole --name ULTRON-PC-Service --paths backend --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all pydantic --collect-all psutil --collect-all dotenv backend/local_service.py
       - name: Package native Windows app
-        run: npx electron-builder --win nsis --x64
+        run: npx electron-builder --win nsis --x64 --publish never
       - name: Publish installer to the Vercel website origin
         env:
           GH_TOKEN: ${{ github.token }}

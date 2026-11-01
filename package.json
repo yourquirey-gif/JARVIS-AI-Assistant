@@ -41,7 +41,7 @@
     ],
     "extraResources": [
       {
-        "from": "build/ULTRON-PC-Service.exe",
+        "from": "dist/ULTRON-PC-Service.exe",
         "to": "ULTRON-PC-Service.exe"
       }
     ],
