@@ -53,3 +53,9 @@ Windows: build the backend service with PyInstaller, then `npx electron-builder 
 Vercel: `VITE_JARVIS_CLOUD_API_URL=https://jarvis-cloud-ai-api.onrender.com`.
 
 Render: `GROQ_API_KEY` (private) and `GROQ_MODEL=openai/gpt-oss-120b`.
+
+## Voice response and Android permissions
+- Tap-to-talk processes the spoken sentence directly; the Hello/Hey ULTRON wake phrase is optional.
+- Android uses native speech recognition and native text-to-speech. Microphone permission is required for voice input; opening one of the declared app shortcuts does not request a broad phone-control permission.
+- The current Android release can open the selected apps. It does not read third-party app screens or type into arbitrary apps. Such automation is not enabled.
+- The website shows the exact latest APK version. Until the persistent signing key is configured in GitHub Actions, the published 1.0.4 APK is clean-install only; it is not advertised as an in-place update.
