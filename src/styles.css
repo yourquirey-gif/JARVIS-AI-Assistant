@@ -370,3 +370,17 @@ a{color:inherit;text-decoration:none}
 .glassMode .visualName{top:75%;letter-spacing:8px}
 .glassMode .visualStatus{top:82%}
 .glassMode .qualityPill{z-index:3}
+
+
+/* ULTRON update prompt and revoke-all controls. */
+.updateVeil{z-index:30}
+.updateModal{max-width:440px;border-color:rgba(96,211,255,.45);box-shadow:0 24px 90px rgba(0,0,0,.7),0 0 38px rgba(41,170,229,.16)}
+.updateModal h3 span{display:flex;align-items:center;gap:8px;color:#b8edff}
+.updateModal h3 svg{width:17px;height:17px}
+.updateVersion{font-size:20px;font-weight:700;letter-spacing:1px;color:#e0f8ff;margin:14px 0 8px}
+.updateNote{font-size:9px;line-height:1.55;color:#dfbd86;background:rgba(77,52,18,.25);border:1px solid rgba(218,169,83,.2);border-radius:7px;padding:9px}
+.versionRow{margin-top:12px}
+.versionRow>span{font-size:8px;letter-spacing:1.3px;color:#65dfff}
+.revokeAllButton{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:39px;margin-top:12px;border:1px solid rgba(255,112,126,.42);border-radius:7px;background:rgba(86,25,37,.42);color:#ffc1c7;font-size:9px;font-weight:800;letter-spacing:.6px}
+.revokeAllButton svg{width:15px;height:15px}
+.revokeAllButton:hover{background:rgba(115,33,47,.6);border-color:#ff8793}
