@@ -286,6 +286,7 @@ export default function App() {
       setAutomationEnabled(false);
       return;
     }
+    let serviceBase = agentUrl.replace(/\/$/, "");
     if (IS_NATIVE_DESKTOP) {
       try {
         const access = await window.ultronDesktop.getPcAccessStatus();
@@ -295,6 +296,10 @@ export default function App() {
           setAutomationEnabled(false);
           return;
         }
+        if (Number.isInteger(access.port) && access.port > 0) {
+          serviceBase = "http://127.0.0.1:" + access.port;
+          if (agentUrl !== serviceBase) setAgentUrl(serviceBase);
+        }
       } catch {
         setAgent("offline");
         setAutomationEnabled(false);
@@ -302,7 +307,7 @@ export default function App() {
       }
     }
     try {
-      const base = agentUrl.replace(/\/$/, "");
+      const base = serviceBase;
       const response = await fetch(base + "/api/health", {
         mode: "cors",
         targetAddressSpace: "loopback"
@@ -603,6 +608,7 @@ export default function App() {
     if (!IS_NATIVE_DESKTOP || !window.ultronDesktop?.onPcStatus) return undefined;
     const unsubscribe = window.ultronDesktop.onPcStatus((value) => {
       if (value?.allowed) {
+        if (Number.isInteger(value.port) && value.port > 0) setAgentUrl("http://127.0.0.1:" + value.port);
         checkAgent();
       } else {
         setPairedToken("");
@@ -625,6 +631,7 @@ export default function App() {
     try {
       const result = await window.ultronDesktop.requestPcAccess();
       if (result?.allowed) {
+        if (Number.isInteger(result.port) && result.port > 0) setAgentUrl("http://127.0.0.1:" + result.port);
         add("system", "PC connection allowed. ULTRON is connecting to this computer.");
         await checkAgent();
       } else {

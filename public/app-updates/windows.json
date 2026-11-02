@@ -1,5 +1,5 @@
 {
-  "version": "1.0.8",
+  "version": "1.0.9",
   "download": "/downloads/ULTRON-Windows-Setup.exe",
-  "releaseNotes": "Windows 1.0.8: native Electron PC service. Removes the separate Python/PyInstaller service and its _socket DLL startup failure."
+  "releaseNotes": "Windows 1.0.9: automatically selects a free local PC-service port when the legacy port is occupied. Installer supports Authenticode signing when signing secrets are configured."
 }

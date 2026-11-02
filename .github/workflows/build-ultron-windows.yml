@@ -46,7 +46,19 @@ jobs:
           $env:ULTRON_PORT = "18765"
           node scripts/smoke-test-pc-service.cjs
       - name: Package native Windows app
+        env:
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
         run: npx electron-builder --win nsis --x64 --publish never
+      - name: Check installer signing status
+        shell: pwsh
+        run: |
+          $signature = Get-AuthenticodeSignature "desktop-release/ULTRON-Windows-Setup.exe"
+          if ($signature.Status -eq "Valid") {
+            Write-Host "Installer is Authenticode-signed by $($signature.SignerCertificate.Subject)."
+          } else {
+            Write-Warning "Installer is unsigned or does not have a trusted signature. Chrome/SmartScreen reputation warnings may remain until a trusted signing identity and clean download reputation are established."
+          }
       - name: Publish installer to the Vercel website origin
         shell: pwsh
         run: |
@@ -64,7 +76,7 @@ jobs:
             New-Item -ItemType Directory -Force -Path "public/downloads","public/app-updates" | Out-Null
             Copy-Item $artifactCopy "public/downloads/ULTRON-Windows-Setup.exe" -Force
             if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
-            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const file='public/app-updates/windows.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); manifest.version=pkg.version; manifest.releaseNotes='Windows 1.0.8: native Electron PC service. Removes the separate Python/PyInstaller service and its _socket DLL startup failure.'; fs.writeFileSync(file,JSON.stringify(manifest,null,2)+String.fromCharCode(10),'utf8');"
+            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const file='public/app-updates/windows.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); manifest.version=pkg.version; manifest.releaseNotes='Windows 1.0.9: automatically selects a free local PC-service port when the legacy port is occupied. Installer supports Authenticode signing when signing secrets are configured.'; fs.writeFileSync(file,JSON.stringify(manifest,null,2)+String.fromCharCode(10),'utf8');"
             if ($LASTEXITCODE -ne 0) { throw "Could not update the Windows release manifest." }
             git add -A public/downloads/ public/app-updates/windows.json
             git diff --cached --quiet

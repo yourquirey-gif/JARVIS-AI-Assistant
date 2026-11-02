@@ -491,6 +491,10 @@ function createPcService(options) {
     },
     get listening() {
       return Boolean(server && server.listening);
+    },
+    get port() {
+      const address = server && server.address();
+      return address && typeof address === "object" ? address.port : null;
     }
   };
 }

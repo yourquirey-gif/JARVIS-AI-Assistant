@@ -1,12 +1,12 @@
 const { app, BrowserWindow, dialog, ipcMain, session, shell } = require("electron");
 const path = require("path");
-const net = require("net");
 const crypto = require("crypto");
 const { createPcService } = require("./pc-service.cjs");
 
 const DEFAULT_SITE = "https://jarvis-ai-assistant-zeta-six.vercel.app";
 const SITE_URL = process.env.ULTRON_SITE_URL || DEFAULT_SITE;
 const PORT = 8765;
+const PORT_RANGE_SIZE = 30;
 
 let mainWindow = null;
 let pcService = null;
@@ -26,17 +26,7 @@ function safeSiteUrl() {
   return parsed;
 }
 
-function isLocalPortOccupied() {
-  return new Promise((resolve) => {
-    const socket = net.createConnection({ host: "127.0.0.1", port: PORT });
-    socket.once("connect", () => { socket.destroy(); resolve(true); });
-    socket.once("error", (error) => {
-      socket.destroy();
-      resolve(error.code !== "ECONNREFUSED");
-    });
-    socket.setTimeout(900, () => { socket.destroy(); resolve(true); });
-  });
-}
+
 
 function stopPcService() {
   pcAllowed = false;
@@ -46,14 +36,14 @@ function stopPcService() {
     service.close().catch(() => {});
   }
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("ultron:pc-status", { allowed: false });
+    mainWindow.webContents.send("ultron:pc-status", { allowed: false, port: null });
   }
 }
 
 function serviceStartupHelp() {
   const details = [
-    "Expected local endpoint: http://127.0.0.1:8765/api/health",
-    "Close any older ULTRON PC Companion instance and try again. If another application is using port 8765, close that application first. ULTRON will not terminate unrelated processes."
+    "ULTRON tries localhost ports 8765 through " + (PORT + PORT_RANGE_SIZE - 1) + ".",
+    "If an older ULTRON companion or another app is still using port 8765, ULTRON will safely use the next free port. It will not terminate unrelated processes."
   ];
   if (pcServiceError) details.push("Service startup details: " + pcServiceError);
   return details.join("\n\n");
@@ -72,17 +62,6 @@ async function startPcServiceInternal() {
     return true;
   }
 
-  if (await isLocalPortOccupied()) {
-    await dialog.showMessageBox(mainWindow, {
-      type: "warning",
-      title: "ULTRON PC service port is busy",
-      message: "ULTRON cannot start its private PC service.",
-      detail: "Port 8765 is already occupied by another local process or an older ULTRON companion. Close that program and restart ULTRON. The app will not terminate unrelated processes.",
-      buttons: ["OK"]
-    });
-    return false;
-  }
-
   pcServiceError = "";
   const token = crypto.randomBytes(32).toString("hex");
   let trustedOrigin;
@@ -94,34 +73,44 @@ async function startPcServiceInternal() {
     return false;
   }
 
-  const service = createPcService({
-    app,
-    shell,
-    token,
-    trustedOrigin,
-    automationEnabled: true,
-    port: PORT
-  });
-
-  try {
-    await service.start();
-    pcService = service;
-    pcAllowed = true;
-    mainWindow?.webContents.send("ultron:pc-status", { allowed: true });
-    return true;
-  } catch (error) {
-    pcServiceError = error && error.message ? error.message : String(error);
-    pcAllowed = false;
-    await service.close().catch(() => {});
-    dialog.showMessageBox(mainWindow, {
-      type: "warning",
-      title: "ULTRON PC service failed to start",
-      message: "ULTRON could not start its private PC service.",
-      detail: serviceStartupHelp(),
-      buttons: ["OK"]
+  let lastPortError = null;
+  for (let port = PORT; port < PORT + PORT_RANGE_SIZE; port += 1) {
+    const service = createPcService({
+      app,
+      shell,
+      token,
+      trustedOrigin,
+      automationEnabled: true,
+      port
     });
-    return false;
+    try {
+      await service.start();
+      pcService = service;
+      pcAllowed = true;
+      mainWindow?.webContents.send("ultron:pc-status", { allowed: true, port: service.port });
+      return true;
+    } catch (error) {
+      lastPortError = error;
+      await service.close().catch(() => {});
+      if (error && error.code === "EADDRINUSE") continue;
+      pcServiceError = error && error.message ? error.message : String(error);
+      break;
+    }
   }
+
+  if (!pcServiceError) {
+    pcServiceError = "All localhost ports " + PORT + "–" + (PORT + PORT_RANGE_SIZE - 1) + " are already in use.";
+    if (lastPortError && lastPortError.message) pcServiceError += " Last error: " + lastPortError.message;
+  }
+  pcAllowed = false;
+  await dialog.showMessageBox(mainWindow, {
+    type: "warning",
+    title: "ULTRON PC service could not start",
+    message: "ULTRON could not find a free local PC-service port.",
+    detail: serviceStartupHelp(),
+    buttons: ["OK"]
+  });
+  return false;
 }
 
 async function askPcAccess(force) {
@@ -141,7 +130,7 @@ async function askPcAccess(force) {
   });
   if (result.response !== 0) {
     pcAllowed = false;
-    mainWindow?.webContents.send("ultron:pc-status", { allowed: false });
+    mainWindow?.webContents.send("ultron:pc-status", { allowed: false, port: null });
     return false;
   }
   return startPcService();
@@ -249,11 +238,13 @@ if (!hasSingleInstanceLock) {
 }
 
 ipcMain.handle("ultron:pc-status", async () => ({
-  allowed: Boolean(pcAllowed && pcService && pcService.listening)
+  allowed: Boolean(pcAllowed && pcService && pcService.listening),
+  port: pcAllowed && pcService && pcService.listening ? pcService.port : null
 }));
-ipcMain.handle("ultron:request-pc-access", async () => ({
-  allowed: await askPcAccess(true)
-}));
+ipcMain.handle("ultron:request-pc-access", async () => {
+  const allowed = await askPcAccess(true);
+  return { allowed, port: allowed && pcService ? pcService.port : null };
+});
 ipcMain.handle("ultron:revoke-pc-access", async () => {
   stopPcService();
   return { allowed: false };
