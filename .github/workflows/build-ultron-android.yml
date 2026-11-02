@@ -36,7 +36,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Build ULTRON mobile interface
         env:
-          VITE_JARVIS_CLOUD_API_URL: https://jarvis-cloud-ai-api.onrender.com
+          VITE_JARVIS_CLOUD_API_URL: https://jarvis-ai-assistant-9ra4.onrender.com
         run: npm run build
       - name: Exclude web-only installers from the Android package
         run: rm -rf dist/downloads
