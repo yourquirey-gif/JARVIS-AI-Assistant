@@ -155,8 +155,6 @@ async def execute(data: ActionRequest, request: Request, x_ultron_token: str = H
             reply = open_url(data.args.get("url", ""))
         elif data.action == "launch_app":
             reply = launch_app(data.args.get("name", ""))
-        elif data.action == "open_url":
-            reply = open_url(data.args.get("url", ""))
         elif data.action == "open_folder":
             reply = open_folder(data.args.get("name", ""))
         elif data.action == "type_text":
