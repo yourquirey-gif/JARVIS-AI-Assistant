@@ -52,7 +52,7 @@ Windows: `npm run build`, then `npx electron-builder --win nsis --x64`. The Node
 
 ## Environment
 
-Vercel: `VITE_JARVIS_CLOUD_API_URL=https://jarvis-cloud-ai-api.onrender.com`.
+Vercel: `VITE_JARVIS_CLOUD_API_URL=https://jarvis-ai-assistant-9ra4.onrender.com`.
 
 Render: `GROQ_API_KEY` (private) and `GROQ_MODEL=openai/gpt-oss-120b`.
 
