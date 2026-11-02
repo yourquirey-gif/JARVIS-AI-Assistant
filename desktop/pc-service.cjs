@@ -241,58 +241,86 @@ function createPcService(options) {
     return "'" + String(value || "").replace(/'/g, "''") + "'";
   }
 
-  let speechVolumeApplied = false;
-  function boostSpeechVolume() {
-    if (process.platform !== "win32") return "Windows speaker boost is available only on Windows.";
-    if (speechVolumeApplied) return "Windows output volume is already boosted for ULTRON.";
-    const script = String.raw`
-$ErrorActionPreference = 'Stop'
-$code = @'
-using System;
-using System.Runtime.InteropServices;
-[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface IMMDeviceEnumerator {
-  int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
-  int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
-}
-[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface IMMDevice {
-  int Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.Interface)] out IAudioEndpointVolume volume);
-}
-[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-interface IAudioEndpointVolume {
-  int RegisterControlChangeNotify(IntPtr notify);
-  int UnregisterControlChangeNotify(IntPtr notify);
-  int GetChannelCount(out uint count);
-  int SetMasterVolumeLevel(float level, Guid context);
-  int SetMasterVolumeLevelScalar(float level, Guid context);
-  int GetMasterVolumeLevel(out float level);
-  int GetMasterVolumeLevelScalar(out float level);
-}
-[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
-class MMDeviceEnumeratorComObject {}
-public static class UltronAudioVolume {
-  public static float Set(float level) {
-    var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-    IMMDevice device;
-    Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(0, 1, out device));
-    var iid = typeof(IAudioEndpointVolume).GUID;
-    IAudioEndpointVolume volume;
-    Marshal.ThrowExceptionForHR(device.Activate(ref iid, 23, IntPtr.Zero, out volume));
-    float previous;
-    Marshal.ThrowExceptionForHR(volume.GetMasterVolumeLevelScalar(out previous));
-    Marshal.ThrowExceptionForHR(volume.SetMasterVolumeLevelScalar(Math.Max(0.0f, Math.Min(1.0f, level)), Guid.Empty));
-    return previous;
+  function amplifySpeechWave(wav) {
+    if (!Buffer.isBuffer(wav) || wav.length < 44 ||
+        wav.toString("ascii", 0, 4) !== "RIFF" ||
+        wav.toString("ascii", 8, 12) !== "WAVE") {
+      throw error(500, "Windows speech engine returned an invalid WAV audio file.");
+    }
+    let offset = 12;
+    let format = 0;
+    let bitsPerSample = 0;
+    let dataOffset = -1;
+    let dataLength = 0;
+    while (offset + 8 <= wav.length) {
+      const chunkName = wav.toString("ascii", offset, offset + 4);
+      const chunkLength = wav.readUInt32LE(offset + 4);
+      const chunkStart = offset + 8;
+      if (chunkStart + chunkLength > wav.length) break;
+      if (chunkName === "fmt " && chunkLength >= 16) {
+        format = wav.readUInt16LE(chunkStart);
+        bitsPerSample = wav.readUInt16LE(chunkStart + 14);
+      } else if (chunkName === "data") {
+        dataOffset = chunkStart;
+        dataLength = chunkLength;
+        break;
+      }
+      offset = chunkStart + chunkLength + (chunkLength & 1);
+    }
+    if (format !== 1 || bitsPerSample !== 16 || dataOffset < 0) {
+      throw error(500, "Windows speech audio format is not supported for voice amplification.");
+    }
+    const gain = 4.0;
+    const limiter = Math.tanh(gain);
+    const end = dataOffset + dataLength;
+    for (let index = dataOffset; index + 1 < end; index += 2) {
+      const sample = wav.readInt16LE(index) / 32768;
+      const amplified = Math.tanh(sample * gain) / limiter;
+      const clipped = Math.max(-1, Math.min(1, amplified));
+      wav.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(clipped * 32767))), index);
+    }
+    return wav;
   }
-}
-'@
-Add-Type -TypeDefinition $code -Language CSharp
-$previous = [UltronAudioVolume]::Set(1.0)
-[Console]::WriteLine(('PREVIOUS:' + [math]::Round($previous * 100)))
-`;
-    runPowerShell(script, 15000);
-    speechVolumeApplied = true;
-    return "Raised Windows master output volume to 100% so ULTRON voice is easier to hear.";
+
+  function synthesizeWindowsSpeech(text, language) {
+    if (process.platform !== "win32") {
+      throw error(501, "Amplified native voice output is available in the ULTRON Windows app.");
+    }
+    const outputFile = path.join(os.tmpdir(), "ultron-speech-" + require("crypto").randomBytes(8).toString("hex") + ".wav");
+    const encodedText = Buffer.from(text, "utf8").toString("base64");
+    const encodedLanguage = Buffer.from(language || "en-IN", "utf8").toString("base64");
+    const encodedPath = Buffer.from(outputFile, "utf8").toString("base64");
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      "Add-Type -AssemblyName System.Speech",
+      "$text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedText + "'))",
+      "$language = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedLanguage + "'))",
+      "$outputPath = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedPath + "'))",
+      "$synth = New-Object System.Speech.Synthesis.SpeechSynthesizer",
+      "try {",
+      "  $voices = @($synth.GetInstalledVoices() | Where-Object { $_.Enabled })",
+      "  $selected = @($voices | Where-Object { $_.VoiceInfo.Culture.Name -ieq $language })",
+      "  if ($selected.Count -eq 0 -and $language.Length -ge 2) {",
+      "    $prefix = $language.Substring(0, 2)",
+      "    $selected = @($voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -ieq $prefix })",
+      "  }",
+      "  if ($selected.Count -gt 0) { $synth.SelectVoice($selected[0].VoiceInfo.Name) }",
+      "  $synth.Volume = 100",
+      "  $synth.Rate = 0",
+      "  $synth.SetOutputToWaveFile($outputPath)",
+      "  $synth.Speak($text)",
+      "  $synth.SetOutputToNull()",
+      "} finally { $synth.Dispose() }",
+      "if (!(Test-Path -LiteralPath $outputPath)) { throw 'The Windows speech engine did not create audio.' }",
+      "[Console]::WriteLine('SPEECH_AUDIO_READY')"
+    ].join("\n");
+    try {
+      runPowerShell(script, 45000);
+      const wav = fs.readFileSync(outputFile);
+      return amplifySpeechWave(wav);
+    } finally {
+      try { fs.unlinkSync(outputFile); } catch {}
+    }
   }
 
   function runWmic(args) {
@@ -638,6 +666,27 @@ if ($remaining.Count -gt 0) { throw 'The app window is still open. It may have u
           automation_enabled: automationEnabled,
           message: "ULTRON local companion paired."
         });
+      }
+
+      if (request.method === "POST" && url.pathname === "/api/speech") {
+        const data = await readJson(request);
+        authorize(request, request.headers["x-ultron-token"] || request.headers["x-jarvis-token"]);
+        if (!automationEnabled) throw error(403, "PC actions are disabled. Enable the ULTRON PC Companion first.");
+        if (typeof data.text !== "string" || !data.text.trim() || data.text.length > 3000) {
+          throw error(422, "Speech text must contain 1 to 3000 characters.");
+        }
+        const language = typeof data.language === "string" && /^[a-z]{2}(?:-[A-Z]{2})?$/i.test(data.language)
+          ? data.language
+          : "en-IN";
+        const audio = synthesizeWindowsSpeech(data.text.trim(), language);
+        response.writeHead(200, {
+          "Content-Type": "audio/wav",
+          "Content-Length": audio.length,
+          "Cache-Control": "no-store",
+          "X-Content-Type-Options": "nosniff"
+        });
+        response.end(audio);
+        return;
       }
 
       if (request.method === "POST" && url.pathname === "/api/command") {
