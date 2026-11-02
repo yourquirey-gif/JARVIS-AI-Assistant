@@ -5,6 +5,7 @@ const http = require("http");
 const { createPcService } = require("../desktop/pc-service.cjs");
 
 const PORT = Number(process.env.ULTRON_PORT || 18765);
+const SERVICE_PORT = PORT + 1;
 const TOKEN = "ultron-pc-service-smoke-test-token";
 const ORIGIN = "https://example.com";
 const opened = [];
@@ -15,7 +16,7 @@ function request(method, pathname, options) {
   return new Promise((resolve, reject) => {
     const req = http.request({
       host: "127.0.0.1",
-      port: PORT,
+      port: SERVICE_PORT,
       path: pathname,
       method,
       headers: {
@@ -60,12 +61,19 @@ async function main() {
     token: TOKEN,
     trustedOrigin: ORIGIN,
     automationEnabled: true,
-    port: PORT
+    port: SERVICE_PORT
+  });
+
+  const blocker = http.createServer((_request, response) => response.end("occupied"));
+  await new Promise((resolve, reject) => {
+    blocker.once("error", reject);
+    blocker.listen(PORT, "127.0.0.1", resolve);
   });
 
   try {
     await service.start();
     assert.strictEqual(service.listening, true, "local Node service should listen");
+    assert.strictEqual(service.port, SERVICE_PORT, "service should report its fallback localhost port");
 
     const health = await request("GET", "/api/health");
     assert.strictEqual(health.status, 200);
@@ -128,6 +136,7 @@ async function main() {
     console.log("ULTRON Node PC service smoke test passed: health, private-network CORS, origin allowlist, pairing, token auth, command routing and approved action execution.");
   } finally {
     await service.close();
+    await new Promise((resolve) => blocker.close(() => resolve()));
   }
 }
 
