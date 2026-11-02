@@ -6,7 +6,7 @@ ULTRON is a voice-first assistant with a Glass Wave Blob hologram, a Hindi/Engli
 
 1. **Web / PWA** — browser voice and chat, responsive interface and automatic web-update prompt. It cannot control other apps on a phone or access a computer's local applications.
 2. **Android app** — a separate Capacitor APK with native speech recognition and voice output. It can open a small, declared set of apps (WhatsApp, YouTube, Chrome, Gmail, Maps, Phone, Messages, Calculator, Play Store and Settings) from direct tap controls or simple direct voice commands. It does not read other apps' screens or type into them. It checks its Android update manifest and asks the user to approve an APK installation when a new build is published.
-3. **Windows desktop app** — Electron shell with a bundled local PC service. At first launch it requests separate PC-connection and microphone consent. When PC access is allowed, the local service starts on loopback and the trusted ULTRON website pairs automatically. PC actions still require in-app approval.
+3. **Windows desktop app** — Electron shell with a built-in Node.js local PC service. It no longer launches a separate Python/PyInstaller executable. At first launch it requests separate PC-connection and microphone consent. When PC access is allowed, the service starts inside Electron on loopback and the trusted ULTRON website pairs automatically. PC actions still require in-app approval.
 
 ## Update behavior
 
@@ -25,7 +25,7 @@ The current Android APK supports native speech recognition and voice output. It 
 
 ## Windows PC access
 
-The local service binds only to `127.0.0.1:8765`. The desktop process generates a random token and allowlists only the exact HTTPS origin it loads. Closing ULTRON terminates the local service and clears runtime permission state. Each local PC action requires an in-app approval.
+The built-in local service binds only to `127.0.0.1:8765`. The desktop process generates a random token and allowlists only the exact HTTPS origin it loads. Closing ULTRON stops the listener and clears runtime permission state. Each local PC action requires an in-app approval. No Python runtime or separate PC-service executable is required.
 
 Currently allowed PC actions include opening selected websites, launching selected built-in applications, opening standard user folders and reading basic CPU/RAM/disk/network/battery status. Arbitrary shell execution, passwords, destructive changes, silent recording, purchases and sending messages are not enabled.
 
@@ -48,7 +48,7 @@ npm run build
 
 Android: `npx cap add android`, then `npx cap sync android` and build with Gradle/Android Studio.
 
-Windows: build the backend service with PyInstaller, then `npx electron-builder --win nsis --x64`.
+Windows: `npm run build`, then `npx electron-builder --win nsis --x64`. The Node PC service is included in the Electron main process.
 
 ## Environment
 

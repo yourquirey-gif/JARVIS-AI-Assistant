@@ -1,7 +1,7 @@
 {
   "name": "ultron-ai-assistant",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "type": "module",
   "main": "desktop/main.cjs",
   "scripts": {
@@ -39,12 +39,6 @@
     "files": [
       "desktop/**/*",
       "package.json"
-    ],
-    "extraResources": [
-      {
-        "from": "dist/ULTRON-PC-Service.exe",
-        "to": "ULTRON-PC-Service.exe"
-      }
     ],
     "win": {
       "target": [

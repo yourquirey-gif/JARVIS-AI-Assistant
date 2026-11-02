@@ -29,45 +29,22 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.8.10"
       - name: Install Node dependencies
         run: npm install --no-audit --no-fund
       - name: Build ULTRON web interface
         env:
           VITE_JARVIS_CLOUD_API_URL: https://jarvis-cloud-ai-api.onrender.com
         run: npm run build
-      - name: Build private localhost PC service
+      - name: Validate Electron and local service syntax
         run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r backend/requirements.txt
-          python -m pip install pyinstaller==5.13.2
-          pyinstaller --noconfirm --clean --onefile --noconsole --name ULTRON-PC-Service --paths backend --collect-all uvicorn --collect-all fastapi --collect-all starlette --collect-all pydantic --collect-all psutil --collect-all dotenv backend/local_service.py
-      - name: Validate Electron main-process syntax
-        run: node --check desktop/main.cjs
-      - name: Smoke-test bundled PC service
+          node --check desktop/main.cjs
+          node --check desktop/pc-service.cjs
+          node --check scripts/smoke-test-pc-service.cjs
+      - name: Smoke-test native Node PC service
         shell: pwsh
         run: |
-          $env:ULTRON_TOKEN = "ultron-build-smoke-test-token-123456"
-          $env:ALLOWED_ORIGINS = "https://example.com"
-          $env:ENABLE_AUTOMATION = "false"
           $env:ULTRON_PORT = "18765"
-          $service = Start-Process -FilePath "dist/ULTRON-PC-Service.exe" -PassThru -WindowStyle Hidden
-          $ready = $false
-          try {
-            for ($attempt = 1; $attempt -le 24; $attempt++) {
-              if ($service.HasExited) { throw "Bundled PC service exited before startup (code $($service.ExitCode))." }
-              try {
-                $health = Invoke-RestMethod -Uri "http://127.0.0.1:18765/api/health" -TimeoutSec 2
-                if ($health.ok -eq $true -and $health.service -eq "ULTRON Local PC Companion") { $ready = $true; break }
-              } catch {}
-              Start-Sleep -Milliseconds 500
-            }
-            if (-not $ready) { throw "Bundled PC service did not answer its health endpoint within 12 seconds." }
-          } finally {
-            if (-not $service.HasExited) { Stop-Process -Id $service.Id -Force }
-          }
+          node scripts/smoke-test-pc-service.cjs
       - name: Package native Windows app
         run: npx electron-builder --win nsis --x64 --publish never
       - name: Publish installer to the Vercel website origin
@@ -87,16 +64,7 @@ jobs:
             New-Item -ItemType Directory -Force -Path "public/downloads","public/app-updates" | Out-Null
             Copy-Item $artifactCopy "public/downloads/ULTRON-Windows-Setup.exe" -Force
             if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
-            @"
-          import json
-          from pathlib import Path
-          package = json.loads(Path("package.json").read_text(encoding="utf-8"))
-          manifest_path = Path("public/app-updates/windows.json")
-          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-          manifest["version"] = package["version"]
-          manifest["releaseNotes"] = "Windows 1.0.7: safer PC companion startup, duplicate-instance protection and clearer Windows 7 compatibility diagnostics."
-          manifest_path.write_text(json.dumps(manifest, indent=2) + chr(10), encoding="utf-8")
-          "@ | python -
+            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const file='public/app-updates/windows.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); manifest.version=pkg.version; manifest.releaseNotes='Windows 1.0.8: native Electron PC service. Removes the separate Python/PyInstaller service and its _socket DLL startup failure.'; fs.writeFileSync(file,JSON.stringify(manifest,null,2)+String.fromCharCode(10),'utf8');"
             if ($LASTEXITCODE -ne 0) { throw "Could not update the Windows release manifest." }
             git add -A public/downloads/ public/app-updates/windows.json
             git diff --cached --quiet
