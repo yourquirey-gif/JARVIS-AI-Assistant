@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld("ultronDesktop", Object.freeze({
   requestMicrophone: () => ipcRenderer.invoke("ultron:request-microphone"),
   getVersion: () => ipcRenderer.invoke("ultron:version"),
   revokeAllPermissions: () => ipcRenderer.invoke("ultron:revoke-all"),
+  onDictationToggle: (callback) => {
+    if (typeof callback !== "function") return () => {};
+    const listener = () => callback();
+    ipcRenderer.on("ultron:dictation-toggle", listener);
+    return () => ipcRenderer.removeListener("ultron:dictation-toggle", listener);
+  },
   onPcStatus: (callback) => {
     if (typeof callback !== "function") return () => {};
     const listener = (_event, value) => callback(value);
