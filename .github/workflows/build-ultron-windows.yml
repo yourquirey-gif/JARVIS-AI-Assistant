@@ -34,7 +34,7 @@ jobs:
         run: npm install --no-audit --no-fund
       - name: Build ULTRON web interface
         env:
-          VITE_JARVIS_CLOUD_API_URL: https://jarvis-cloud-ai-api.onrender.com
+          VITE_JARVIS_CLOUD_API_URL: https://jarvis-ai-assistant-9ra4.onrender.com
         run: npm run build
       - name: Validate Electron and local service syntax
         run: |
