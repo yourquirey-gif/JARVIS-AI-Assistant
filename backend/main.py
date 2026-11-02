@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from agent import get_system_info, launch_app, list_desktop_folders, open_website, open_url, open_folder, type_text
+from agent import get_system_info, launch_app, list_desktop_folders, open_website, open_url, open_folder, type_text, delete_user_file
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=False)
@@ -93,6 +93,9 @@ def detect_action(text):
     type_match = re.match(r"^(?:please\s+)?(?:type|write|enter|लिखो|लिख दो|लिखिए|टाइप करो)\s+([\s\S]{1,1000})$", text.strip(), flags=re.IGNORECASE)
     if type_match:
         return {"name": "type_text", "args": {"text": type_match.group(1)}, "description": "Type the requested text into the active app"}
+    delete_match = re.match(r"^(?:please\s+)?(?:delete|remove|trash|erase)\s+(?:the\s+)?(?:file\s+)?(.+?)\s+(?:from|in)\s+(desktop|documents|downloads|pictures|music|videos)\s*$", text.strip(), flags=re.IGNORECASE)
+    if delete_match and not re.search(r"[\\/]", delete_match.group(1)):
+        return {"name": "delete_item", "args": {"name": delete_match.group(1).strip().strip("\\\"'"), "folder": delete_match.group(2).lower()}, "description": "Move one named file to the Recycle Bin after confirmation"}
     sites = {
         "youtube": ["youtube", "यूट्यूब"],
         "google": ["google", "गूगल"],
@@ -152,10 +155,14 @@ async def execute(data: ActionRequest, request: Request, x_ultron_token: str = H
             reply = open_url(data.args.get("url", ""))
         elif data.action == "launch_app":
             reply = launch_app(data.args.get("name", ""))
+        elif data.action == "open_url":
+            reply = open_url(data.args.get("url", ""))
         elif data.action == "open_folder":
             reply = open_folder(data.args.get("name", ""))
         elif data.action == "type_text":
             reply = type_text(data.args.get("text", ""))
+        elif data.action == "delete_item":
+            reply = delete_user_file(data.args.get("folder", ""), data.args.get("name", ""))
         elif data.action == "list_desktop_folders":
             result = list_desktop_folders()
             reply = "Desktop has {} folders: {}".format(result["count"], ", ".join(result["folders"]) or "none")
