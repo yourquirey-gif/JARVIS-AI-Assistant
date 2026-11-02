@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from agent import get_system_info, launch_app, list_desktop_folders, open_website, open_url, open_folder
+from agent import get_system_info, launch_app, list_desktop_folders, open_website, open_url, open_folder, type_text
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=False)
@@ -90,6 +90,9 @@ async def auto_pair(request: Request):
 
 def detect_action(text):
     value = re.sub(r"\s+", " ", text.lower().strip())
+    type_match = re.match(r"^(?:please\s+)?(?:type|write|enter|लिखो|लिख दो|लिखिए|टाइप करो)\s+([\s\S]{1,1000})$", text.strip(), flags=re.IGNORECASE)
+    if type_match:
+        return {"name": "type_text", "args": {"text": type_match.group(1)}, "description": "Type the requested text into the active app"}
     sites = {
         "youtube": ["youtube", "यूट्यूब"],
         "google": ["google", "गूगल"],
@@ -151,6 +154,8 @@ async def execute(data: ActionRequest, request: Request, x_ultron_token: str = H
             reply = launch_app(data.args.get("name", ""))
         elif data.action == "open_folder":
             reply = open_folder(data.args.get("name", ""))
+        elif data.action == "type_text":
+            reply = type_text(data.args.get("text", ""))
         elif data.action == "list_desktop_folders":
             result = list_desktop_folders()
             reply = "Desktop has {} folders: {}".format(result["count"], ", ".join(result["folders"]) or "none")
