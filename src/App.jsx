@@ -60,6 +60,7 @@ export default function App() {
   const [downloadPlatform, setDownloadPlatform] = useState("");
   const [downloadWindowsVersion, setDownloadWindowsVersion] = useState("");
   const [listening, setListening] = useState(false);
+  const [dictating, setDictating] = useState(false);
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [muted, setMuted] = useState(false);
@@ -97,6 +98,8 @@ export default function App() {
   const desktopMediaStreamRef = useRef(null);
   const desktopMediaRecorderRef = useRef(null);
   const desktopAudioContextRef = useRef(null);
+  const dictatingRef = useRef(false);
+  const dictationToggleRef = useRef(null);
 
   const setArmState = (value) => {
     armedRef.current = value;
@@ -186,6 +189,8 @@ export default function App() {
   const revokeAllPermissions = async () => {
     listeningRef.current = false;
     armedRef.current = false;
+    dictatingRef.current = false;
+    setDictating(false);
     if (restartTimer.current) window.clearTimeout(restartTimer.current);
     try { rec.current?.stop(); } catch {}
     if (IS_NATIVE_ANDROID) stopAndroidRecognition();
@@ -959,7 +964,31 @@ export default function App() {
           const result = await response.json();
           if (!response.ok) throw new Error(result.detail || "ULTRON could not transcribe that command.");
           const phrase = String(result.text || "").trim();
-          if (phrase && listeningRef.current) { setTranscript(phrase); setError(""); await speechHandlerRef.current?.(phrase); }
+          if (phrase && listeningRef.current) {
+            setTranscript(phrase);
+            setError("");
+            if (dictatingRef.current) {
+              if (/^(?:stop|end|finish) dictation$|^(?:लिखना बंद करो|डिक्टेशन बंद करो)$/i.test(phrase.trim())) {
+                dictatingRef.current = false;
+                setDictating(false);
+                listeningRef.current = false;
+                setListening(false);
+                setStatus("DICTATION STOPPED");
+                add("system", "Dictation stopped. Your text has been entered in the active app.");
+              } else {
+                const typedText = phrase.trim() + " ";
+                const typedResponse = await localFetch("/api/action/execute", {
+                  method: "POST",
+                  body: JSON.stringify({ action: "type_text", args: { text: typedText } })
+                });
+                const typedResult = await typedResponse.json();
+                if (!typedResponse.ok) throw new Error(typedResult.detail || "ULTRON could not type into the active app.");
+                setStatus("DICTATION · WRITING IN ACTIVE APP");
+              }
+            } else {
+              await speechHandlerRef.current?.(phrase);
+            }
+          }
         } catch (transcriptionError) {
           setError(transcriptionError?.message || "Voice transcription interrupted. ULTRON will keep listening.");
           await new Promise((resolve) => window.setTimeout(resolve, 1000));
@@ -983,6 +1012,53 @@ export default function App() {
       if (listeningRef.current) setStatus("LISTENING FOR COMMAND");
     }
   };
+  const stopDictation = () => {
+    dictatingRef.current = false;
+    setDictating(false);
+    listeningRef.current = false;
+    setListening(false);
+    setArmState(false);
+    if (desktopMediaRecorderRef.current && desktopMediaRecorderRef.current.state !== "inactive") {
+      try { desktopMediaRecorderRef.current.stop(); } catch {}
+    }
+    if (desktopMediaStreamRef.current) desktopMediaStreamRef.current.getTracks().forEach((track) => track.stop());
+    setStatus("DICTATION STOPPED");
+  };
+
+  const toggleDictation = async () => {
+    if (dictatingRef.current) {
+      stopDictation();
+      return;
+    }
+    if (!IS_NATIVE_DESKTOP) {
+      setError("Dictate Anywhere is available in the Windows ULTRON desktop app.");
+      return;
+    }
+    if (!pairedToken || agent !== "paired") {
+      setError("Connect the ULTRON PC Companion before using Dictate Anywhere.");
+      setShowPerms(true);
+      return;
+    }
+    if (!permissions.microphone) {
+      setError("Allow microphone permission before starting Dictate Anywhere.");
+      setShowPerms(true);
+      return;
+    }
+    dictatingRef.current = true;
+    setDictating(true);
+    setError("");
+    setTranscript("Dictation is on. Text will be typed into the currently focused app or website.");
+    if (!listeningRef.current) {
+      listeningRef.current = true;
+      setListening(true);
+      setArmState(false);
+      setStatus("DICTATION ACTIVE · CTRL+ALT+D TO STOP");
+      startDesktopWhisperRecognition();
+    } else {
+      setStatus("DICTATION ACTIVE · CTRL+ALT+D TO STOP");
+    }
+  };
+
   const toggleMic = async () => {
     if (!permissions.microphone) {
       setError("First allow microphone permission in Permissions.");
@@ -990,6 +1066,7 @@ export default function App() {
       return;
     }
     if (listening) {
+      if (dictatingRef.current) { dictatingRef.current = false; setDictating(false); }
       listeningRef.current = false;
       setListening(false);
       setArmState(false);
@@ -1029,6 +1106,12 @@ export default function App() {
       setListening(false);
     }
   };
+
+  dictationToggleRef.current = toggleDictation;
+  useEffect(() => {
+    if (!IS_NATIVE_DESKTOP || !window.ultronDesktop?.onDictationToggle) return undefined;
+    return window.ultronDesktop.onDictationToggle(() => dictationToggleRef.current?.());
+  }, []);
 
   const installApp = async () => {
     if (!installPrompt) {
@@ -1250,6 +1333,14 @@ export default function App() {
             }} title={muted ? "Unmute voice" : "Mute voice"}>{muted ? <VolumeX /> : <Volume2 />}</button>
             <button className="voiceIconButton" onClick={() => setShowPerms(true)} title="Permissions"><ShieldCheck /></button>
           </div>
+          {IS_NATIVE_DESKTOP && agent === "paired" && (
+            <div className="dictationDock">
+              <button className={"dictationButton " + (dictating ? "active" : "")} onClick={toggleDictation}>
+                {dictating ? "STOP DICTATION" : "DICTATE ANYWHERE"}
+              </button>
+              <span>{dictating ? "Typing in the focused app/site · say “Stop dictation” or press Ctrl + Alt + D" : "Select a text field in any app/site, then press Ctrl + Alt + D or tap Dictate Anywhere."}</span>
+            </div>
+          )}
           <div className="heroFooter">
             <span>ULTRON VOICE INTERFACE · {IS_NATIVE_ANDROID ? "ANDROID APP" : IS_NATIVE_DESKTOP ? "WINDOWS DESKTOP APP" : IS_MOBILE_DEVICE ? "MOBILE WEB APP" : "DESKTOP WEB"}</span>
             <label>VOICE
