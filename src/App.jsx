@@ -731,17 +731,18 @@ export default function App() {
         body: JSON.stringify({ action: pending.name, args: pending.args || {} })
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || "Action was not completed.");
+      if (!response.ok) throw new Error(data.detail || "Sir, the action was not completed.");
       if (data.system) setSystem(data.system);
-      add("assistant", data.reply || "Command completed, sir.");
-      speak(data.reply || "Command completed, sir.");
+      const completion = "Certainly, Sir. " + (data.reply || "The action is complete.");
+      add("assistant", completion);
+      await speak(completion);
       setPending(null);
       setStatus("READY");
       checkAgent();
     } catch (e) {
-      const detail = e.message || "Action failed.";
-      add("system", detail);
-      speak(lang.startsWith("hi") ? "Action पूरा नहीं हो पाया। " + detail : "The action failed. " + detail);
+      const detail = e.message || "The action failed.";
+      add("system", "Sir, " + detail);
+      await speak("Sir, the action failed. " + detail);
       setStatus("ACTION FAILED");
     } finally {
       setBusy(false);
@@ -749,9 +750,9 @@ export default function App() {
   };
 
   const denyAction = () => {
-    add("system", "Permission denied. No PC action was executed.");
+    add("system", "Sir, permission denied. No file was moved.");
     setPending(null);
-    speak(lang.startsWith("hi") ? "ठीक है। आपकी अनुमति के बिना कोई action नहीं किया गया।" : "Understood. I did not run the action.");
+    speak("Understood, Sir. I cancelled the file operation. Nothing was deleted.");
     setStatus("READY");
   };
 
