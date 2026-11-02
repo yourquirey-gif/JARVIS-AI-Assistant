@@ -125,6 +125,11 @@ function createPcService(options) {
     if (typeMatch) {
       return { name: "type_text", args: { text: typeMatch[1] }, description: "Type the requested text into the active app" };
     }
+    const directUrlMatch = rawValue.match(/^(?:please\s+)?(?:open|visit|go to)\\s+(https?:\\/\\/[^\\s]+|www\\.[^\\s]+)\\s*$/i);
+    if (directUrlMatch) {
+      const url = directUrlMatch[1].startsWith("www.") ? "https://" + directUrlMatch[1] : directUrlMatch[1];
+      return { name: "open_url", args: { url }, description: "Open the requested website address" };
+    }
     const deleteMatch = rawValue.match(/^(?:please\s+)?(?:delete|remove|trash|erase)\s+(?:the\s+)?(?:file\s+)?(.+?)\s+(?:from|in)\s+(desktop|documents|downloads|pictures|music|videos)\s*$/i);
     if (deleteMatch) {
       const name = deleteMatch[1].trim().replace(/^["']|["']$/g, "");
