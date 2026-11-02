@@ -68,11 +68,12 @@ export default function App() {
   const [speechBeat, setSpeechBeat] = useState(0);
   const [visualQuality, setVisualQuality] = useState("auto");
   const [status, setStatus] = useState("STANDBY");
-  const [messages, setMessages] = useState([{ role: "assistant", text: "ULTRON online. Tap the microphone and speak a command. “Hello Ultron” is optional." }]);
+  const [messages, setMessages] = useState([{ role: "assistant", text: "Sir, ULTRON is online. Tell me what you would like me to do." }]);
   const [input, setInput] = useState("");
   const [transcript, setTranscript] = useState("");
   const [lang, setLang] = useState("en-IN");
   const [pending, setPending] = useState(null);
+  const [siteChoices, setSiteChoices] = useState([]);
   const [error, setError] = useState("");
   const [location, setLocation] = useState("Not shared");
   const [system, setSystem] = useState(null);
@@ -276,10 +277,17 @@ export default function App() {
         }
         const source = context.createBufferSource();
         const gain = context.createGain();
+        const compressor = context.createDynamicsCompressor();
         source.buffer = decoded;
-        gain.gain.value = 1.6;
+        gain.gain.value = 1.8;
+        compressor.threshold.setValueAtTime(-7, context.currentTime);
+        compressor.knee.setValueAtTime(4, context.currentTime);
+        compressor.ratio.setValueAtTime(10, context.currentTime);
+        compressor.attack.setValueAtTime(0.003, context.currentTime);
+        compressor.release.setValueAtTime(0.18, context.currentTime);
         source.connect(gain);
-        gain.connect(context.destination);
+        gain.connect(compressor);
+        compressor.connect(context.destination);
         desktopSpeechSourceRef.current = source;
         await new Promise((resolve, reject) => {
           source.onended = () => {
@@ -458,82 +466,258 @@ export default function App() {
   };
 
   const executeLocalCommand = async (action) => {
-    if (!pairedToken) throw new Error("Allow the ULTRON PC connection first.");
-    const response = await localFetch("/api/action/execute", { method: "POST", body: JSON.stringify({ action: action.name, args: action.args || {} }) });
+    if (!pairedToken) throw new Error("Sir, allow the ULTRON PC connection first.");
+    const response = await localFetch("/api/action/execute", {
+      method: "POST",
+      body: JSON.stringify({ action: action.name, args: action.args || {} })
+    });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.detail || "ULTRON could not complete that PC action.");
+    if (!response.ok) throw new Error(result.detail || "Sir, ULTRON could not complete that PC action.");
     if (result.system) setSystem(result.system);
-    const completion = chooseAcknowledgement(ackRef.current);
-    ackRef.current = completion;
-    const reply = completion + (result.reply ? " " + result.reply : "");
-    add("assistant", reply); await speak(reply); setStatus("READY"); checkAgent();
+    const reply = "Certainly, Sir. " + (result.reply || "The action is complete.");
+    add("assistant", reply);
+    await speak(reply);
+    setStatus("READY");
+    checkAgent();
+  };
+
+  const openResolvedWebsite = async (item) => {
+    if (pairedToken) {
+      await executeLocalCommand({ name: "open_url", args: { url: item.url } });
+      return;
+    }
+    const opened = window.open(item.url, "_blank", "noopener,noreferrer");
+    if (!opened) throw new Error("Sir, the browser blocked the new tab. Allow pop-ups for ULTRON and try again.");
+    const reply = "Certainly, Sir. I have opened " + (item.title || item.domain || item.url) + ".";
+    add("assistant", reply);
+    await speak(reply);
+    setStatus("READY");
+  };
+
+  const searchAndOpenWebsite = async (query) => {
+    const cleanQuery = String(query || "").trim().replace(/\s+(?:website|site|web page|page)$/i, "").trim();
+    if (!cleanQuery) throw new Error("Sir, please tell me the website name.");
+    const direct = /^(?:https?:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(cleanQuery);
+    if (direct) {
+      const url = /^https?:\/\//i.test(cleanQuery) ? cleanQuery : "https://" + cleanQuery;
+      await openResolvedWebsite({ title: cleanQuery, url, domain: cleanQuery });
+      return;
+    }
+    if (!CLOUD_API) {
+      const searchUrl = "https://www.google.com/search?q=" + encodeURIComponent(cleanQuery);
+      await openResolvedWebsite({ title: "Google search results for " + cleanQuery, url: searchUrl, domain: "google.com" });
+      return;
+    }
+    const response = await fetch(CLOUD_API + "/api/search-sites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ query: cleanQuery })
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Sir, I could not search for that website.");
+    const choices = Array.isArray(data.results) ? data.results.slice(0, 5) : [];
+    if (choices.length === 0) {
+      const searchUrl = "https://www.google.com/search?q=" + encodeURIComponent(cleanQuery);
+      await openResolvedWebsite({ title: "Google search results for " + cleanQuery, url: searchUrl, domain: "google.com" });
+      return;
+    }
+    if (choices.length === 1) {
+      await openResolvedWebsite(choices[0]);
+      return;
+    }
+    setSiteChoices(choices);
+    const numbered = choices.map((item, index) => (index + 1) + ". " + item.title + " — " + item.domain).join("\n");
+    const prompt = "Sir, I found multiple websites matching \"" + cleanQuery + "\". Which one should I open? Please say or type the number.";
+    add("assistant", prompt + "\n" + numbered);
+    await speak(prompt + " You can choose the first, second, third, fourth, or fifth result.");
+    setStatus("WAITING FOR WEBSITE CHOICE");
+  };
+
+  const dispatchProposedAction = async (action) => {
+    if (!action || !action.name) throw new Error("Sir, I could not identify that action.");
+    if (action.name === "search_website") {
+      await searchAndOpenWebsite(action.args?.query || "");
+      return;
+    }
+    if (action.name === "delete_item") {
+      const filename = action.args?.name || "the selected file";
+      const folder = action.args?.folder || "the selected folder";
+      setPending(action);
+      const prompt = "Sir, please confirm: should I move " + filename + " from " + folder + " to the Windows Recycle Bin? You can restore it later. I will not permanently erase it.";
+      add("assistant", prompt);
+      await speak(prompt);
+      setStatus("AWAITING DELETE CONFIRMATION");
+      return;
+    }
+    try {
+      await executeLocalCommand(action);
+    } catch (actionError) {
+      if (action.name === "launch_app") {
+        await searchAndOpenWebsite(action.args?.name || "");
+        return;
+      }
+      throw actionError;
+    }
+  };
+
+  const selectWebsiteChoice = (message) => {
+    const value = String(message || "").trim().toLowerCase();
+    const ordinal = {
+      first: 0, "1st": 0, one: 0,
+      second: 1, "2nd": 1, two: 1,
+      third: 2, "3rd": 2, three: 2,
+      fourth: 3, "4th": 3, four: 3,
+      fifth: 4, "5th": 4, five: 4
+    };
+    const numeric = value.match(/^(?:number\s*)?([1-5])(?:st|nd|rd|th)?(?:\s+one)?[.!]?$/i);
+    if (numeric) return siteChoices[Number(numeric[1]) - 1] || null;
+    const words = value.match(/\b(first|1st|one|second|2nd|two|third|3rd|three|fourth|4th|four|fifth|5th|five)\b/i);
+    if (words && Object.prototype.hasOwnProperty.call(ordinal, words[1].toLowerCase())) {
+      return siteChoices[ordinal[words[1].toLowerCase()]] || null;
+    }
+    return siteChoices.find((item) => {
+      const domain = String(item.domain || "").toLowerCase();
+      const title = String(item.title || "").toLowerCase();
+      return (domain && value.includes(domain)) || (title && value.includes(title));
+    }) || null;
   };
 
   const sendCommand = async (message) => {
     const text = (message || "").trim();
     if (!text || busy) return;
-    setInput(""); setTranscript(""); add("user", text);
-    const androidApp = IS_NATIVE_ANDROID ? matchAndroidAppCommand(text) : null;
-    if (androidApp) {
-      setBusy(true); setStatus("OPENING APP");
+    setInput("");
+    setTranscript("");
+    add("user", text);
+
+    if (siteChoices.length) {
+      setBusy(true);
       try {
-        await openAndroidApp(androidApp.packageName);
-        const completion = chooseAcknowledgement(ackRef.current); ackRef.current = completion;
-        const openedReply = completion + (lang.startsWith("hi") ? " " + androidApp.name + " खोल दिया है।" : " " + androidApp.name + " is open.");
-        add("assistant", openedReply); await speak(openedReply); setStatus("READY");
-      } catch (e) {
-        const detail = e.message || "Could not open " + androidApp.name + ".";
-        add("system", detail); await speak(lang.startsWith("hi") ? androidApp.name + " नहीं खुल पाया। " + detail : detail);
-        setStatus("APP OPEN FAILED");
-      } finally { setBusy(false); }
+        const selected = selectWebsiteChoice(text);
+        if (!selected) {
+          const prompt = "Sir, please choose one of the listed websites by saying its number, such as first or second, or by naming its domain.";
+          add("assistant", prompt);
+          await speak(prompt);
+          return;
+        }
+        setSiteChoices([]);
+        await openResolvedWebsite(selected);
+      } catch (choiceError) {
+        const detail = choiceError.message || "Sir, I could not open that website.";
+        add("system", detail);
+        await speak(detail);
+      } finally {
+        setBusy(false);
+      }
       return;
     }
-    setBusy(true); setStatus("THINKING");
+
+    const androidApp = IS_NATIVE_ANDROID ? matchAndroidAppCommand(text) : null;
+    if (androidApp) {
+      setBusy(true);
+      setStatus("OPENING APP");
+      try {
+        await openAndroidApp(androidApp.packageName);
+        const openedReply = "Certainly, Sir. " + androidApp.name + " is open.";
+        add("assistant", openedReply);
+        await speak(openedReply);
+        setStatus("READY");
+      } catch (e) {
+        const detail = e.message || "Sir, I could not open " + androidApp.name + ".";
+        add("system", detail);
+        await speak(detail);
+        setStatus("APP OPEN FAILED");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
+    setBusy(true);
+    setStatus("THINKING");
     try {
       let data;
       if (pairedToken) {
-        const localResponse = await localFetch("/api/command", { method: "POST", body: JSON.stringify({ message: text, language: lang }) });
+        const localResponse = await localFetch("/api/command", {
+          method: "POST",
+          body: JSON.stringify({ message: text, language: lang })
+        });
         const localData = await localResponse.json();
-        if (!localResponse.ok) throw new Error(localData.detail || "Local companion request failed");
-        if (localData.proposed_action) { await executeLocalCommand(localData.proposed_action); return; }
+        if (!localResponse.ok) throw new Error(localData.detail || "Sir, the local PC companion request failed.");
+        if (localData.proposed_action) {
+          await dispatchProposedAction(localData.proposed_action);
+          return;
+        }
         if (localData.needs_ai) {
-          if (!CLOUD_API) throw new Error("Cloud AI API is not configured.");
+          if (!CLOUD_API) throw new Error("Sir, the Cloud AI API is not configured.");
           const plannerResponse = await fetch(CLOUD_API + "/api/plan", {
-            method: "POST", headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ message: text, language: lang, history: messages.slice(-8).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })) })
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: text,
+              language: lang,
+              history: messages.slice(-8).map((m) => ({
+                role: m.role === "assistant" ? "assistant" : "user",
+                content: m.text
+              }))
+            })
           });
           data = await plannerResponse.json();
-          if (!plannerResponse.ok) throw new Error(data.detail || "ULTRON could not interpret the command.");
-          if (data.kind === "action" && data.proposed_action) { await executeLocalCommand(data.proposed_action); return; }
-        } else { data = localData; }
+          if (!plannerResponse.ok) throw new Error(data.detail || "Sir, I could not interpret that command.");
+          if (data.kind === "action" && data.proposed_action) {
+            await dispatchProposedAction(data.proposed_action);
+            return;
+          }
+        } else {
+          data = localData;
+        }
       } else {
-        if (!CLOUD_API) throw new Error("Cloud AI API is not configured.");
+        if (!CLOUD_API) throw new Error("Sir, the Cloud AI API is not configured.");
         const plannerResponse = await fetch(CLOUD_API + "/api/plan", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: text, language: lang, history: messages.slice(-8).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })) })
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: text,
+            language: lang,
+            history: messages.slice(-8).map((m) => ({
+              role: m.role === "assistant" ? "assistant" : "user",
+              content: m.text
+            }))
+          })
         });
         data = await plannerResponse.json();
-        if (!plannerResponse.ok) throw new Error(data.detail || "Cloud AI request failed");
+        if (!plannerResponse.ok) throw new Error(data.detail || "Sir, the Cloud AI request failed.");
         if (data.kind === "action" && data.proposed_action) {
-          const note = "I understood the PC command, sir. Start and pair the ULTRON PC Companion to run it on this computer.";
-          add("assistant", note); await speak(note); setStatus("PC COMPANION REQUIRED"); return;
+          if (data.proposed_action.name === "search_website") {
+            await dispatchProposedAction(data.proposed_action);
+            return;
+          }
+          const note = "Sir, I understood the PC command. Please start and pair the ULTRON PC Companion so I can control this computer.";
+          add("assistant", note);
+          await speak(note);
+          setStatus("PC COMPANION REQUIRED");
+          return;
         }
       }
-      const reply = data.reply || "I am ready, sir.";
-      add("assistant", reply); await speak(reply); setStatus("READY");
+      let reply = String(data.reply || "Sir, I am ready.");
+      if (!/^sir\b|,\s*sir\b/i.test(reply)) reply = "Sir, " + reply;
+      add("assistant", reply);
+      await speak(reply);
+      setStatus("READY");
     } catch (e) {
-      const detail = e.message || "Request failed.";
+      const detail = e.message || "Sir, the request failed.";
       add("system", detail);
-      const voiceError = lang.startsWith("hi") ? "माफ़ कीजिए, आपका command पूरा नहीं हो पाया। " + detail : "Sorry, I could not complete that command. " + detail;
-      await speak(voiceError); setStatus("REQUEST FAILED");
-    } finally { setBusy(false); }
+      const voiceError = "Sir, I could not complete that command. " + detail;
+      await speak(voiceError);
+      setStatus("REQUEST FAILED");
+    } finally {
+      setBusy(false);
+    }
   };
   const approveAction = async () => {
     if (!pending || !pairedToken) return;
     setBusy(true);
     setStatus("EXECUTING");
-    const acknowledgement = chooseAcknowledgement(ackRef.current);
-    ackRef.current = acknowledgement;
+    const acknowledgement = "Certainly, Sir. I will carry out the confirmed action now.";
     add("assistant", acknowledgement);
     speak(acknowledgement);
     try {
@@ -1424,8 +1608,8 @@ export default function App() {
           <section className="hudPanel aiPanel">
             <h3><span>AI CHAT INTERFACE</span><Bot /></h3>
             <div className="chatGreeting">
-              <b>Hello. I am ULTRON.</b>
-              <span>Your personal intelligent system assistant. How may I assist you?</span>
+              <b>Hello, Sir. I am ULTRON.</b>
+              <span>Your personal AI assistant. What would you like me to do?</span>
             </div>
             <div className="chatSuggestions">
               <span>You can ask me to:</span>
@@ -1443,6 +1627,15 @@ export default function App() {
               ))}
               <div ref={logEnd} />
             </div>
+            {siteChoices.length > 0 && (
+              <div className="siteChoiceList" aria-label="Website search results">
+                {siteChoices.map((choice, index) => (
+                  <button type="button" key={choice.url} disabled={busy} onClick={() => sendCommand(String(index + 1))}>
+                    {index + 1}. {choice.title} · {choice.domain}
+                  </button>
+                ))}
+              </div>
+            )}
             <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); sendCommand(input); }}>
               <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask ULTRON anything..." />
               <button disabled={!input.trim() || busy} aria-label="Send message"><Send /></button>
@@ -1531,6 +1724,18 @@ export default function App() {
             <div className="permission versionRow"><div><b>Installed version</b><small>{installedNativeVersion || APP_VERSION} · {IS_NATIVE_ANDROID ? "Android app" : IS_NATIVE_DESKTOP ? "Windows desktop" : "Web / PWA"}</small></div><span>ULTRON</span></div>
             <button className="revokeAllButton" onClick={revokeAllPermissions}><ShieldCheck /> REVOKE ALL ULTRON ACCESS</button>
             <p className="privacy"><ShieldCheck /> Revoke All stops listening, cancels speech, clears ULTRON's local consent and disconnects the Windows companion. Android, Windows and browser OS permissions cannot be revoked by an app itself; use the device's system settings for those. Each sensitive PC action still asks for confirmation.</p>
+          </section>
+        </div>
+      )}
+      {pending && pending.name === "delete_item" && (
+        <div className="veil" role="presentation">
+          <section className="modal panel" role="dialog" aria-modal="true" aria-labelledby="deleteConfirmTitle">
+            <h3 id="deleteConfirmTitle">CONFIRM FILE MOVE</h3>
+            <p className="modalLead">Sir, please confirm that ULTRON should move <b>{pending.args?.name}</b> from <b>{pending.args?.folder}</b> to the Windows Recycle Bin. This is recoverable, not a permanent delete.</p>
+            <div className="modalActions">
+              <button className="revokeAllButton" disabled={busy} onClick={approveAction}>CONFIRM · MOVE TO RECYCLE BIN</button>
+              <button className="secondaryButton" disabled={busy} onClick={denyAction}>CANCEL</button>
+            </div>
           </section>
         </div>
       )}
