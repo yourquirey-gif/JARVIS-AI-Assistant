@@ -1338,7 +1338,7 @@ export default function App() {
               <button className={"dictationButton " + (dictating ? "active" : "")} onClick={toggleDictation}>
                 {dictating ? "STOP DICTATION" : "DICTATE ANYWHERE"}
               </button>
-              <span>{dictating ? "Typing in the focused app/site · say “Stop dictation” or press Ctrl + Alt + D" : "Select a text field in any app/site, then press Ctrl + Alt + D or tap Dictate Anywhere."}</span>
+              <span>{dictating ? "Typing in the focused app/site · say “Stop dictation” or press Ctrl + Alt + D" : "Shortcut: focus a text field, then press Ctrl + Alt + D. Or start here, then switch to the app/site."}</span>
             </div>
           )}
           <div className="heroFooter">
