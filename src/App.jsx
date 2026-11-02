@@ -513,13 +513,21 @@ export default function App() {
       await openResolvedWebsite({ title: "Google search results for " + cleanQuery, url: searchUrl, domain: "google.com" });
       return;
     }
-    const response = await fetch(CLOUD_API + "/api/search-sites", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query: cleanQuery })
-    });
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.detail || "Sir, I could not search for that website.");
+    let response;
+    let data;
+    try {
+      response = await fetch(CLOUD_API + "/api/search-sites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: cleanQuery })
+      });
+      data = await response.json();
+      if (!response.ok) throw new Error(data.detail || "Website search failed.");
+    } catch (_) {
+      const searchUrl = "https://www.google.com/search?q=" + encodeURIComponent(cleanQuery);
+      await openResolvedWebsite({ title: "Google search results for " + cleanQuery, url: searchUrl, domain: "google.com" });
+      return;
+    }
     const choices = Array.isArray(data.results) ? data.results.slice(0, 5) : [];
     if (choices.length === 0) {
       const searchUrl = "https://www.google.com/search?q=" + encodeURIComponent(cleanQuery);
