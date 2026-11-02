@@ -2,8 +2,9 @@ import os
 import re
 import time
 import json
+from html.parser import HTMLParser
 from collections import defaultdict, deque
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qs, unquote
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
@@ -30,7 +31,52 @@ LOCAL_PATTERNS = [
     r"\b(desktop folders|folders on my desktop|battery percentage|battery status|cpu usage|ram usage|system information|pc status|open downloads|open documents)\b",
     r"\b(turn on|turn off|enable|disable)\b.{0,40}\b(wi-?fi|bluetooth|airplane mode)\b",
     r"\b(close|switch|manage)\b.{0,35}\b(tab|tabs|window|windows)\b",
+    r"\b(delete|remove|trash|erase)\b.{0,80}\b(file|document|pdf|image|photo)\b",
 ]
+
+class SiteSearchRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=120)
+
+class DuckDuckGoResultParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.current = None
+        self.results = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag != "a":
+            return
+        values = dict(attrs)
+        classes = (values.get("class") or "").split()
+        if "result__a" not in classes and "result-link" not in classes:
+            return
+        href = unquote(values.get("href") or "")
+        parsed = urlparse(href if href.startswith(("http://", "https://")) else "https:" + href if href.startswith("//") else "https://html.duckduckgo.com" + href)
+        if parsed.hostname and parsed.hostname.endswith("duckduckgo.com"):
+            target = parse_qs(parsed.query).get("uddg", [])
+            if target:
+                href = unquote(target[0])
+        parsed_target = urlparse(href)
+        if parsed_target.scheme not in ("http", "https") or not parsed_target.hostname:
+            return
+        host = (parsed_target.hostname or "").lower()
+        if host.endswith("duckduckgo.com") or host == "googleadservices.com":
+            return
+        self.current = {"url": href, "title_parts": []}
+
+    def handle_data(self, data):
+        if self.current is not None:
+            self.current["title_parts"].append(data)
+
+    def handle_endtag(self, tag):
+        if tag != "a" or self.current is None:
+            return
+        item = self.current
+        self.current = None
+        title = " ".join("".join(item["title_parts"]).split())
+        if title:
+            host = (urlparse(item["url"]).hostname or "").lower()
+            self.results.append({"title": title[:160], "url": item["url"], "domain": host.removeprefix("www.")})
 
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=2000)
@@ -75,6 +121,18 @@ def validate_action(action):
     description = str(action.get("description") or "ULTRON wants to perform an action on your PC.")[:180]
     if name == "open_website" and args.get("name") in sites:
         safe_args = {"name": args["name"]}
+    elif name == "search_website" and isinstance(args.get("query"), str):
+        query = args["query"].strip()
+        if query and len(query) <= 120 and re.fullmatch(r"[\w .&()+@'-]+", query, flags=re.UNICODE):
+            safe_args = {"query": query}
+        else:
+            return None
+    elif name == "delete_item" and args.get("folder") in folders and isinstance(args.get("name"), str):
+        filename = args["name"].strip()
+        if filename and len(filename) <= 180 and filename not in (".", "..") and not re.search(r'[\\/<>:"|?*]', filename):
+            safe_args = {"folder": args["folder"], "name": filename}
+        else:
+            return None
     elif name in ("launch_app", "close_app") and isinstance(args.get("name"), str):
         app_name = args["name"].strip()
         if app_name and len(app_name) <= 80 and re.fullmatch(r"[\w .&()+-]+", app_name, flags=re.UNICODE):
@@ -92,6 +150,36 @@ def validate_action(action):
     else:
         return None
     return {"name": name, "args": safe_args, "description": description}
+
+@app.post("/api/search-sites")
+async def search_sites(data: SiteSearchRequest, request: Request):
+    """Find web destinations so ULTRON can ask before opening ambiguous names."""
+    rate_limit(request)
+    query = data.query.strip()
+    try:
+        async with httpx.AsyncClient(timeout=12, follow_redirects=True, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36"
+        }) as client:
+            response = await client.get("https://html.duckduckgo.com/html/", params={"q": query + " official website"})
+            response.raise_for_status()
+        parser = DuckDuckGoResultParser()
+        parser.feed(response.text)
+        unique = []
+        seen = set()
+        for item in parser.results:
+            parsed = urlparse(item["url"])
+            domain = (parsed.hostname or "").lower().removeprefix("www.")
+            if not domain or domain in seen:
+                continue
+            seen.add(domain)
+            unique.append({"title": item["title"], "url": item["url"], "domain": domain})
+            if len(unique) >= 5:
+                break
+        return {"query": query, "results": unique}
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, "Website search provider returned HTTP {}.".format(exc.response.status_code))
+    except httpx.HTTPError:
+        raise HTTPException(502, "Could not search for that website. Try saying its full domain name.")
 
 @app.get("/health")
 async def health():
@@ -189,18 +277,24 @@ async def plan(data: ChatRequest, request: Request):
     if not GROQ_API_KEY:
         raise HTTPException(503, "Cloud AI is not configured yet. Add GROQ_API_KEY in the Render service environment.")
     system = (
-        "You are ULTRON's command planner. Understand Hindi and English. Return one JSON object only. "
-        "Decide whether the user's latest request is explicitly asking to do something on their local Windows PC. "
-        "For ordinary questions/conversation return {\"kind\":\"chat\",\"reply\":\"...\"}. "
-        "For supported PC commands return {\"kind\":\"action\",\"action\":{\"name\":\"...\",\"args\":{},\"description\":\"short plain-language description\"}}. "
-        "Allowed action names and arguments only: open_website with name in youtube/google/github/instagram/facebook/gmail/wikipedia/whatsapp; "
-        "launch_app with name as the display name of any installed app; close_app with name as the running app name; "
+        "You are ULTRON, a courteous personal Windows AI assistant. Always address the user as Sir in every reply. "
+        "Use clear English for action prompts and confirmations, even when the user speaks Hindi. "
+        "Understand Hindi and English commands. Return one JSON object only. "
+        "For ordinary questions return {\"kind\":\"chat\",\"reply\":\"Sir, ...\"}. "
+        "For supported PC commands return {\"kind\":\"action\",\"action\":{\"name\":\"...\",\"args\":{},\"description\":\"...\"}}. "
+        "Allowed action names: open_website with a known website name; search_website with the user's requested site or brand query; "
+        "launch_app with the display name of an installed app; close_app with the running app name; "
         "open_folder with name in desktop/documents/downloads/pictures/music/videos; "
-        "open_url with url as a normal http or https URL; get_system_info with empty args; "
-        "list_desktop_folders with empty args; type_text with the exact text to type into the currently focused app or website. "
-        "For a web search request, use open_url with a Google search URL only if the user clearly asked to search the web. "
-        "Do not invent parameters. If the requested operation is unsupported, unsafe, destructive, sends/purchases anything, accesses credentials, executes shell commands, deletes/changes files or applications, uninstalls software, edits program binaries, restarts or shuts down the PC, return a chat response explaining the limitation. "
-        "Never classify a normal question about how to do something as a PC action. The user has already granted PC access in ULTRON. An explicit, clearly requested action from the paired local companion may execute without a second per-command approval prompt. Only the exact allowlisted actions above are executable; never invent or expand the allowlist. Use type_text only when the user explicitly asks you to type or write the exact requested text into the active app."
+        "open_url with a complete normal http or https URL; get_system_info; list_desktop_folders; "
+        "type_text with exact text to type into the currently focused app or website; "
+        "delete_item with folder in desktop/documents/downloads/pictures/music/videos and one exact file name. "
+        "When the user asks to open a website by name rather than a complete domain, prefer search_website. "
+        "Do not invent a URL for a product, company, or brand name. The app searches and displays real numbered results; the user chooses one. "
+        "For delete_item, only act on one explicitly named file in one approved user folder. Never guess the folder or file name. "
+        "The app shows a separate confirmation before moving a file to the Windows Recycle Bin. "
+        "Do not support bulk deletion, permanent deletion, emptying the Recycle Bin, deleting system/app files, shell commands, registry edits, credential access, purchases, messages, shutdown, or restart. "
+        "Use type_text only when the user explicitly asks you to type/write the exact requested content into the active app. "
+        "Never claim an action is complete before the local companion reports success."
     )
     messages = [{"role": "system", "content": system}]
     messages.extend(clean_history(data.history))
