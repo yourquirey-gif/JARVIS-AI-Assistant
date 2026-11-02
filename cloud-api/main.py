@@ -77,10 +77,12 @@ def validate_action(action):
         safe_args = {"name": args["name"]}
     elif name in ("launch_app", "close_app") and isinstance(args.get("name"), str):
         app_name = args["name"].strip()
-        if app_name and len(app_name) <= 80 and re.fullmatch(r"[\\w .&()+-]+", app_name, flags=re.UNICODE):
+        if app_name and len(app_name) <= 80 and re.fullmatch(r"[\w .&()+-]+", app_name, flags=re.UNICODE):
             safe_args = {"name": app_name}
         else:
             return None
+    elif name == "type_text" and isinstance(args.get("text"), str) and 0 < len(args["text"]) <= 1000:
+        safe_args = {"text": args["text"]}
     elif name == "open_folder" and args.get("name") in folders:
         safe_args = {"name": args["name"]}
     elif name == "open_url" and valid_url(args.get("url")):
@@ -195,10 +197,10 @@ async def plan(data: ChatRequest, request: Request):
         "launch_app with name as the display name of any installed app; close_app with name as the running app name; "
         "open_folder with name in desktop/documents/downloads/pictures/music/videos; "
         "open_url with url as a normal http or https URL; get_system_info with empty args; "
-        "list_desktop_folders with empty args. "
+        "list_desktop_folders with empty args; type_text with the exact text to type into the currently focused app or website. "
         "For a web search request, use open_url with a Google search URL only if the user clearly asked to search the web. "
         "Do not invent parameters. If the requested operation is unsupported, unsafe, destructive, sends/purchases anything, accesses credentials, executes shell commands, deletes/changes files or applications, uninstalls software, edits program binaries, restarts or shuts down the PC, return a chat response explaining the limitation. "
-        "Never classify a normal question about how to do something as a PC action. The user has already granted PC access in ULTRON. An explicit, clearly requested action from the paired local companion may execute without a second per-command approval prompt. Only the exact allowlisted actions above are executable; never invent or expand the allowlist."
+        "Never classify a normal question about how to do something as a PC action. The user has already granted PC access in ULTRON. An explicit, clearly requested action from the paired local companion may execute without a second per-command approval prompt. Only the exact allowlisted actions above are executable; never invent or expand the allowlist. Use type_text only when the user explicitly asks you to type or write the exact requested text into the active app."
     )
     messages = [{"role": "system", "content": system}]
     messages.extend(clean_history(data.history))
