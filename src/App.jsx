@@ -15,10 +15,10 @@ import {
 const DEFAULT_AGENT = "http://127.0.0.1:8765";
 const CLOUD_API = (import.meta.env.VITE_JARVIS_CLOUD_API_URL || "").replace(/\/$/, "");
 // Same-origin download: custom domains automatically use their own host.
-const WINDOWS_DOWNLOAD = "/downloads/ULTRON-Windows-Setup.exe";
+const APP_VERSION = __ULTRON_VERSION__;
+const WINDOWS_DOWNLOAD = `/downloads/ULTRON-Windows-Setup-${APP_VERSION}.exe`;
 const ANDROID_DOWNLOAD = "/downloads/ULTRON-Android.apk";
 const UPDATE_ORIGIN = "https://jarvis-ai-assistant-zeta-six.vercel.app";
-const APP_VERSION = __ULTRON_VERSION__;
 const IS_NATIVE_ANDROID = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
 const IS_MOBILE_DEVICE = IS_NATIVE_ANDROID || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
 const IS_NATIVE_DESKTOP = typeof window !== "undefined" && Boolean(window.ultronDesktop?.isNativeDesktop);
@@ -136,10 +136,19 @@ export default function App() {
     const platform = IS_NATIVE_ANDROID ? "android" : IS_NATIVE_DESKTOP ? "windows" : "web";
     const base = IS_NATIVE_ANDROID ? UPDATE_ORIGIN : window.location.origin;
     try {
-      const response = await fetch(`${base}/app-updates/${platform}.json?check=${Date.now()}`, {
+      const manifestPath = platform === "windows"
+        ? `/app-updates/windows-${APP_VERSION}.json`
+        : `/app-updates/${platform}.json`;
+      let response = await fetch(`${base}${manifestPath}?check=${Date.now()}`, {
         cache: "no-store",
         headers: { "Accept": "application/json" }
       });
+      if (!response.ok && platform === "windows") {
+        response = await fetch(`${base}/app-updates/windows.json?check=${Date.now()}`, {
+          cache: "no-store",
+          headers: { "Accept": "application/json" }
+        });
+      }
       if (!response.ok) throw new Error("Update information is not available.");
       const release = await response.json();
       let installedVersion = APP_VERSION;
