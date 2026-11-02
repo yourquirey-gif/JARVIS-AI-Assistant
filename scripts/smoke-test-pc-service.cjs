@@ -35,11 +35,11 @@ function request(method, pathname, options) {
       res.on("end", () => {
         let data = {};
         try { data = text ? JSON.parse(text) : {}; } catch (_) {}
-        resolve({ status: res.statusCode, headers: res.headers, data });
+        resolve({ status: res.statusCode, headers: res.headers, data, text });
       });
     });
     req.on("error", reject);
-    req.setTimeout(4000, () => req.destroy(new Error("Smoke-test HTTP request timed out.")));
+    req.setTimeout(30000, () => req.destroy(new Error("Smoke-test HTTP request timed out.")));
     if (body) req.write(body);
     req.end();
   });
@@ -149,6 +149,16 @@ async function main() {
     });
     assert.strictEqual(invalidSpeech.status, 422, "speech endpoint must reject empty speech text");
 
+    const amplifiedSpeech = await request("POST", "/api/speech", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { text: "ULTRON voice output test.", language: "en-IN" }
+    });
+    assert.strictEqual(amplifiedSpeech.status, 200, "Windows must synthesize amplified speech audio");
+    assert.strictEqual(amplifiedSpeech.headers["content-type"], "audio/wav");
+    assert.strictEqual(amplifiedSpeech.text.slice(0, 4), "RIFF", "speech response must be a WAV file");
+    assert(amplifiedSpeech.text.length > 44, "speech WAV must contain audio data");
+
     const invalidToken = await request("POST", "/api/command", {
       origin: ORIGIN,
       token: "wrong-token",
@@ -172,7 +182,7 @@ async function main() {
     });
     assert.strictEqual(invalidAction.status, 400);
 
-    console.log("ULTRON Node PC service smoke test passed: health, private-network CORS, origin allowlist, pairing, token auth, command routing, approved action execution, and protected amplified speech endpoint.");
+    console.log("ULTRON Node PC service smoke test passed: health, private-network CORS, origin allowlist, pairing, token auth, command routing, approved action execution, and end-to-end amplified speech synthesis.");
   } finally {
     await service.close();
     await new Promise((resolve) => blocker.close(() => resolve()));
