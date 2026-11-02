@@ -75,8 +75,12 @@ def validate_action(action):
     description = str(action.get("description") or "ULTRON wants to perform an action on your PC.")[:180]
     if name == "open_website" and args.get("name") in sites:
         safe_args = {"name": args["name"]}
-    elif name == "launch_app" and args.get("name") in apps:
-        safe_args = {"name": args["name"]}
+    elif name in ("launch_app", "close_app") and isinstance(args.get("name"), str):
+        app_name = args["name"].strip()
+        if app_name and len(app_name) <= 80 and re.fullmatch(r"[\\w .&()+-]+", app_name, flags=re.UNICODE):
+            safe_args = {"name": app_name}
+        else:
+            return None
     elif name == "open_folder" and args.get("name") in folders:
         safe_args = {"name": args["name"]}
     elif name == "open_url" and valid_url(args.get("url")):
@@ -188,12 +192,12 @@ async def plan(data: ChatRequest, request: Request):
         "For ordinary questions/conversation return {\"kind\":\"chat\",\"reply\":\"...\"}. "
         "For supported PC commands return {\"kind\":\"action\",\"action\":{\"name\":\"...\",\"args\":{},\"description\":\"short plain-language description\"}}. "
         "Allowed action names and arguments only: open_website with name in youtube/google/github/instagram/facebook/gmail/wikipedia/whatsapp; "
-        "launch_app with name in notepad/calculator/paint/command prompt/file explorer/task manager/control panel/wordpad; "
+        "launch_app with name as the display name of any installed app; close_app with name as the running app name; "
         "open_folder with name in desktop/documents/downloads/pictures/music/videos; "
         "open_url with url as a normal http or https URL; get_system_info with empty args; "
         "list_desktop_folders with empty args. "
         "For a web search request, use open_url with a Google search URL only if the user clearly asked to search the web. "
-        "Do not invent parameters. If the requested operation is unsupported, unsafe, destructive, sends/purchases anything, accesses credentials, executes shell commands, deletes/changes data, restarts or shuts down the PC, return a chat response explaining the limitation. "
+        "Do not invent parameters. If the requested operation is unsupported, unsafe, destructive, sends/purchases anything, accesses credentials, executes shell commands, deletes/changes files or applications, uninstalls software, edits program binaries, restarts or shuts down the PC, return a chat response explaining the limitation. "
         "Never classify a normal question about how to do something as a PC action. The user has already granted PC access in ULTRON. An explicit, clearly requested action from the paired local companion may execute without a second per-command approval prompt. Only the exact allowlisted actions above are executable; never invent or expand the allowlist."
     )
     messages = [{"role": "system", "content": system}]
