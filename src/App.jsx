@@ -100,6 +100,7 @@ export default function App() {
   const desktopAudioContextRef = useRef(null);
   const desktopSpeechAudioContextRef = useRef(null);
   const desktopSpeechSourceRef = useRef(null);
+  const desktopSpeechRequestIdRef = useRef(0);
   const dictatingRef = useRef(false);
   const dictationToggleRef = useRef(null);
 
@@ -111,6 +112,7 @@ export default function App() {
   const add = (role, text) => setMessages((m) => [...m, { role, text, time: new Date().toLocaleTimeString() }]);
 
   const stopAmplifiedDesktopSpeech = () => {
+    desktopSpeechRequestIdRef.current += 1;
     const source = desktopSpeechSourceRef.current;
     const context = desktopSpeechAudioContextRef.current;
     desktopSpeechSourceRef.current = null;
@@ -245,9 +247,10 @@ export default function App() {
     }
 
     if (IS_NATIVE_DESKTOP && pairedToken) {
+      stopAmplifiedDesktopSpeech();
+      const speechRequestId = desktopSpeechRequestIdRef.current;
       try {
         try { window.speechSynthesis?.cancel(); } catch {}
-        stopAmplifiedDesktopSpeech();
         setSpeaking(true);
         const response = await localFetch("/api/speech", {
           method: "POST",
@@ -258,6 +261,7 @@ export default function App() {
           try { detail = (await response.json()).detail || detail; } catch {}
           throw new Error(detail);
         }
+        if (speechRequestId !== desktopSpeechRequestIdRef.current) { setSpeaking(false); return; }
         const wav = await response.arrayBuffer();
         const AudioContextClass = window.AudioContext || window.webkitAudioContext;
         if (!AudioContextClass) throw new Error("This Windows audio engine does not support amplified playback.");
@@ -265,6 +269,11 @@ export default function App() {
         desktopSpeechAudioContextRef.current = context;
         if (context.state === "suspended") await context.resume();
         const decoded = await context.decodeAudioData(wav.slice(0));
+        if (speechRequestId !== desktopSpeechRequestIdRef.current) {
+          try { context.close().catch(() => {}); } catch {}
+          setSpeaking(false);
+          return;
+        }
         const source = context.createBufferSource();
         const gain = context.createGain();
         source.buffer = decoded;
@@ -285,6 +294,7 @@ export default function App() {
         });
         return;
       } catch (voiceError) {
+        if (speechRequestId !== desktopSpeechRequestIdRef.current) { setSpeaking(false); return; }
         stopAmplifiedDesktopSpeech();
         setSpeaking(false);
         console.warn("ULTRON amplified Windows voice failed; falling back to browser speech.", voiceError);
