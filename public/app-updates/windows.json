@@ -1,5 +1,5 @@
 {
   "version": "1.2.0",
   "download": "/downloads/ULTRON-Windows-Setup.exe",
-  "releaseNotes": "Windows 1.2.0: launch installed Windows apps by name, close supported running apps, boost Windows speaker output for clearer ULTRON voice, and improve voice clarity. Destructive app/file changes remain protected."
+  "releaseNotes": "Windows 1.1.0: Whisper voice input, continuous listening, one-time PC access for allowlisted commands, deeper voice output, and live CPU/RAM/disk/network/process monitoring."
 }
