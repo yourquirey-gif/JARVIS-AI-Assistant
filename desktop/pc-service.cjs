@@ -119,8 +119,9 @@ function createPcService(options) {
   }
 
   function detectAction(input) {
-    const value = String(input || "").toLowerCase().trim().replace(/\s+/g, " ");
-    const typeMatch = value.match(/^(?:type|write|enter|लिखो|लिख दो|लिखिए|टाइप करो)\s+([\s\S]{1,1000})$/i);
+    const rawValue = String(input || "").trim();
+    const value = rawValue.toLowerCase().replace(/\s+/g, " ");
+    const typeMatch = rawValue.match(/^(?:type|write|enter|लिखो|लिख दो|लिखिए|टाइप करो)\s+([\s\S]{1,1000})$/i);
     if (typeMatch) {
       return { name: "type_text", args: { text: typeMatch[1] }, description: "Type the requested text into the active app" };
     }
