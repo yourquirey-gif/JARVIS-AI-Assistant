@@ -175,7 +175,7 @@ function createPcService(options) {
       }
       const genericOpen = value.match(/^(?:please\s+)?(?:open|launch|start|run|खोलो|खोल|चालू करो|चलाओ)\s+(.+?)\s*$/i);
       if (genericOpen) {
-        const target = genericOpen[1].replace(/^the\\s+/i, "").replace(/\\s+(?:app|application)$/i, "").replace(/^["']|["']$/g, "").trim();
+        const target = genericOpen[1].replace(/^the\s+/i, "").replace(/\s+(?:app|application)$/i, "").replace(/^["']|["']$/g, "").trim();
         if (target.length > 0 && target.length <= 80 && /^[\p{L}\p{N} .&()+_-]+$/u.test(target)) {
           return { name: "launch_app", args: { name: target }, description: "Launch installed app " + target };
         }
@@ -420,7 +420,7 @@ $previous = [UltronAudioVolume]::Set(1.0)
       });
     }
     const target = String(name || "").trim();
-    if (!target || target.length > 80 || !/^[\\p{L}\\p{N} .&()+_-]+$/u.test(target)) {
+    if (!target || target.length > 80 || !/^[\p{L}\p{N} .&()+_-]+$/u.test(target)) {
       throw error(400, "Please say the installed app's name, without a file path or command.");
     }
     const script = `
@@ -473,6 +473,9 @@ throw ('Could not find an installed app or Start Menu shortcut named "' + $name 
       "google chrome": "chrome", chrome: "chrome",
       "microsoft edge": "msedge", edge: "msedge",
       "visual studio code": "code", "vs code": "code", code: "code",
+      "microsoft word": "WINWORD", word: "WINWORD",
+      "microsoft excel": "EXCEL", excel: "EXCEL",
+      "microsoft powerpoint": "POWERPNT", powerpoint: "POWERPNT",
       firefox: "firefox", notepad: "notepad", paint: "mspaint",
       calculator: "CalculatorApp", calc: "CalculatorApp",
       "task manager": "Taskmgr", "command prompt": "cmd",
@@ -489,15 +492,16 @@ $ErrorActionPreference = 'Stop'
 $name = ${psQuote(processName)}
 $blocked = @('System','Idle','Registry','smss','csrss','wininit','services','lsass','svchost','winlogon','dwm','explorer','node','electron')
 if ($blocked -contains $name) { throw 'That is a protected Windows or ULTRON process and cannot be closed by voice command.' }
-$items = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
-if ($items.Count -eq 0) { throw ('No running app process named "' + $name + '" was found.') }
+$items = @(Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+if ($items.Count -eq 0) { throw ('No visible app window named "' + $name + '" was found.') }
 $closed = 0
 foreach ($item in $items) {
-  try { if ($item.MainWindowHandle -ne 0 -and $item.CloseMainWindow()) { $closed++ } } catch {}
+  try { if ($item.CloseMainWindow()) { $closed++ } } catch {}
 }
-if ($closed -eq 0) { throw 'Windows could not request a normal close. The app may have no closeable window.' }
-Start-Sleep -Milliseconds 900
-if (@(Get-Process -Name $name -ErrorAction SilentlyContinue).Count -gt 0) { throw 'The app is still open. It may have unsaved work or a dialog; ULTRON will not force-close it.' }
+if ($closed -eq 0) { throw 'Windows could not request a normal close. The app may have unsaved work.' }
+Start-Sleep -Milliseconds 1200
+$remaining = @(Get-Process -Name $name -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 })
+if ($remaining.Count -gt 0) { throw 'The app window is still open. It may have unsaved work or a confirmation dialog; ULTRON will not force-close it.' }
 [Console]::WriteLine(('CLOSED:' + $closed))
 `;
     const result = runPowerShell(script, 12000);
@@ -602,7 +606,7 @@ if (@(Get-Process -Name $name -ErrorAction SilentlyContinue).Count -gt 0) { thro
           service: "ULTRON Local PC Companion",
           automation_enabled: automationEnabled,
           paired: Boolean(token),
-          version: "1.2.0",
+          version: "1.3.0",
           engine: "electron-node"
         });
       }
