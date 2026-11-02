@@ -110,6 +110,32 @@ async function main() {
     assert.strictEqual(command.status, 200);
     assert.strictEqual(command.data.proposed_action.name, "open_website");
 
+    const genericApp = await request("POST", "/api/command", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { message: "open Microsoft Word", language: "en-IN" }
+    });
+    assert.strictEqual(genericApp.status, 200);
+    assert.strictEqual(genericApp.data.proposed_action.name, "launch_app");
+    assert.strictEqual(genericApp.data.proposed_action.args.name, "microsoft word");
+
+    const closeApp = await request("POST", "/api/command", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { message: "close Chrome", language: "en-IN" }
+    });
+    assert.strictEqual(closeApp.status, 200);
+    assert.strictEqual(closeApp.data.proposed_action.name, "close_app");
+
+    const typed = await request("POST", "/api/command", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { message: "type Hello ULTRON", language: "en-IN" }
+    });
+    assert.strictEqual(typed.status, 200);
+    assert.strictEqual(typed.data.proposed_action.name, "type_text");
+    assert.strictEqual(typed.data.proposed_action.args.text, "Hello ULTRON");
+
     const invalidToken = await request("POST", "/api/command", {
       origin: ORIGIN,
       token: "wrong-token",
