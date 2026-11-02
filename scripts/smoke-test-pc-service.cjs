@@ -136,6 +136,19 @@ async function main() {
     assert.strictEqual(typed.data.proposed_action.name, "type_text");
     assert.strictEqual(typed.data.proposed_action.args.text, "Hello ULTRON");
 
+    const unauthorizedSpeech = await request("POST", "/api/speech", {
+      origin: ORIGIN,
+      body: { text: "test speech", language: "en-IN" }
+    });
+    assert.strictEqual(unauthorizedSpeech.status, 401, "speech endpoint must require the paired token");
+
+    const invalidSpeech = await request("POST", "/api/speech", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { text: "", language: "en-IN" }
+    });
+    assert.strictEqual(invalidSpeech.status, 422, "speech endpoint must reject empty speech text");
+
     const invalidToken = await request("POST", "/api/command", {
       origin: ORIGIN,
       token: "wrong-token",
@@ -159,7 +172,7 @@ async function main() {
     });
     assert.strictEqual(invalidAction.status, 400);
 
-    console.log("ULTRON Node PC service smoke test passed: health, private-network CORS, origin allowlist, pairing, token auth, command routing and approved action execution.");
+    console.log("ULTRON Node PC service smoke test passed: health, private-network CORS, origin allowlist, pairing, token auth, command routing, approved action execution, and protected amplified speech endpoint.");
   } finally {
     await service.close();
     await new Promise((resolve) => blocker.close(() => resolve()));
