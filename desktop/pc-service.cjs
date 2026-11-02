@@ -120,6 +120,10 @@ function createPcService(options) {
 
   function detectAction(input) {
     const value = String(input || "").toLowerCase().trim().replace(/\s+/g, " ");
+    const typeMatch = value.match(/^(?:type|write|enter|लिखो|लिख दो|लिखिए|टाइप करो)\s+([\s\S]{1,1000})$/i);
+    if (typeMatch) {
+      return { name: "type_text", args: { text: typeMatch[1] }, description: "Type the requested text into the active app" };
+    }
     const sites = {
       youtube: ["youtube", "यूट्यूब"],
       google: ["google", "गूगल"],
@@ -140,10 +144,11 @@ function createPcService(options) {
       "control panel": ["control panel", "कंट्रोल पैनल"],
       wordpad: ["wordpad", "वर्डपैड"]
     };
-    const closeMatch = value.match(/^(?:please\\s+)?(?:close|quit|exit|terminate|बंद करो|बंद कर दो)\\s+(.+?)\\s*$/i);
+    const closeMatch = value.match(/^(?:please\s+)?(?:close|quit|exit|terminate)\s+(.+?)\s*$/i)
+      || value.match(/^(.+?)\s+(?:बंद करो|बंद कर दो|band karo)$/i);
     if (closeMatch) {
-      const target = closeMatch[1].replace(/\\s+(?:app|application)$/i, "").trim();
-      if (target && !/^(?:this|all)\\s+(?:window|windows|tab|tabs)$/i.test(target)) {
+      const target = (closeMatch[1] || closeMatch[2] || "").replace(/\s+(?:app|application)$/i, "").trim();
+      if (target && !/^(?:this|all)\s+(?:window|windows|tab|tabs)$/i.test(target)) {
         return { name: "close_app", args: { name: target }, description: "Close " + target };
       }
     }
@@ -167,10 +172,10 @@ function createPcService(options) {
           return { name: "open_folder", args: { name }, description: "Open your " + name + " folder" };
         }
       }
-      const genericOpen = value.match(/^(?:please\\s+)?(?:open|launch|start|run|खोलो|खोल|चालू करो|चलाओ)\\s+(.+?)\\s*$/i);
+      const genericOpen = value.match(/^(?:please\s+)?(?:open|launch|start|run|खोलो|खोल|चालू करो|चलाओ)\s+(.+?)\s*$/i);
       if (genericOpen) {
         const target = genericOpen[1].replace(/^the\\s+/i, "").replace(/\\s+(?:app|application)$/i, "").replace(/^["']|["']$/g, "").trim();
-        if (target.length > 0 && target.length <= 80 && /^[\\p{L}\\p{N} .&()+_-]+$/u.test(target)) {
+        if (target.length > 0 && target.length <= 80 && /^[\p{L}\p{N} .&()+_-]+$/u.test(target)) {
           return { name: "launch_app", args: { name: target }, description: "Launch installed app " + target };
         }
       }
@@ -226,7 +231,7 @@ function createPcService(options) {
       }).trim();
     } catch (err) {
       const output = String(err && (err.stderr || err.stdout || err.message) || "").trim();
-      const message = output.split(/\\r?\\n/).filter(Boolean).slice(-1)[0] || "Windows could not complete the requested app action.";
+      const message = output.split(/\r?\n/).filter(Boolean).slice(-1)[0] || "Windows could not complete the requested app action.";
       throw error(400, message.slice(0, 240));
     }
   }
@@ -281,12 +286,12 @@ public static class UltronAudioVolume {
 }
 '@
 Add-Type -TypeDefinition $code -Language CSharp
-$previous = [UltronAudioVolume]::Set(0.85)
+$previous = [UltronAudioVolume]::Set(1.0)
 [Console]::WriteLine(('PREVIOUS:' + [math]::Round($previous * 100)))
 `;
     runPowerShell(script, 15000);
     speechVolumeApplied = true;
-    return "Raised Windows master output volume to 85% so ULTRON voice is easier to hear.";
+    return "Raised Windows master output volume to 100% so ULTRON voice is easier to hear.";
   }
 
   function runWmic(args) {
@@ -455,7 +460,7 @@ if ($command -and $command.Source) {
 throw ('Could not find an installed app or Start Menu shortcut named "' + $name + '".')
 `;
     const result = runPowerShell(script, 18000);
-    const label = result.split(/\\r?\\n/).find((line) => line.startsWith("LAUNCHED:"));
+    const label = result.split(/\r?\n/).find((line) => line.startsWith("LAUNCHED:"));
     return label ? "Launched " + label.slice(9) + "." : "Launched " + target + ".";
   }
 
@@ -474,7 +479,7 @@ throw ('Could not find an installed app or Start Menu shortcut named "' + $name 
       spotify: "Spotify", discord: "Discord", zoom: "Zoom"
     };
     const normalized = original.toLowerCase();
-    const processName = aliases[normalized] || original.replace(/\\.exe$/i, "").replace(/[^A-Za-z0-9_.-]/g, "");
+    const processName = aliases[normalized] || original.replace(/\.exe$/i, "").replace(/[^A-Za-z0-9_.-]/g, "");
     if (!processName || processName.length > 64 || !/^[A-Za-z0-9_.-]+$/.test(processName)) {
       throw error(400, "I could not safely identify that app's process name.");
     }
@@ -487,16 +492,27 @@ $items = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
 if ($items.Count -eq 0) { throw ('No running app process named "' + $name + '" was found.') }
 $closed = 0
 foreach ($item in $items) {
-  try { Stop-Process -Id $item.Id -Force -ErrorAction Stop; $closed++ } catch {}
+  try { if ($item.MainWindowHandle -ne 0 -and $item.CloseMainWindow()) { $closed++ } } catch {}
 }
-if ($closed -eq 0) { throw 'Windows could not close that app. It may require administrator permission.' }
+if ($closed -eq 0) { throw 'Windows could not request a normal close. The app may have no closeable window.' }
+Start-Sleep -Milliseconds 900
+if (@(Get-Process -Name $name -ErrorAction SilentlyContinue).Count -gt 0) { throw 'The app is still open. It may have unsaved work or a dialog; ULTRON will not force-close it.' }
 [Console]::WriteLine(('CLOSED:' + $closed))
 `;
     const result = runPowerShell(script, 12000);
-    const count = Number((result.match(/CLOSED:(\\d+)/) || [])[1] || 0);
+    const count = Number((result.match(/CLOSED:(\d+)/) || [])[1] || 0);
     return "Closed " + count + " running " + original + (count === 1 ? " process." : " processes.");
   }
 
+  function typeText(value) {
+    if (process.platform !== "win32") throw error(400, "Typing into other apps is supported on Windows desktop.");
+    const text = String(value || "");
+    if (!text.trim() || text.length > 1000) throw error(422, "Dictation text must contain 1 to 1000 characters.");
+    const encodedText = Buffer.from(text, "utf8").toString("base64");
+    const script = "$ErrorActionPreference = 'Stop'\n$code = @'\nusing System;\nusing System.ComponentModel;\nusing System.Runtime.InteropServices;\npublic static class UltronUnicodeInput {\n  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }\n  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }\n  [StructLayout(LayoutKind.Sequential)] public struct HARDWAREINPUT { public uint uMsg; public ushort wParamL; public ushort wParamH; }\n  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public HARDWAREINPUT hi; }\n  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION U; }\n  [DllImport(\"user32.dll\", SetLastError=true)] static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);\n  public static int Type(string text) {\n    int count = 0;\n    foreach (char ch in text) {\n      INPUT[] events = new INPUT[2];\n      events[0].type = 1;\n      events[0].U.ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = 0x0004, time = 0, dwExtraInfo = IntPtr.Zero };\n      events[1].type = 1;\n      events[1].U.ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = 0x0004 | 0x0002, time = 0, dwExtraInfo = IntPtr.Zero };\n      uint sent = SendInput(2, events, Marshal.SizeOf(typeof(INPUT)));\n      if (sent != 2) throw new Win32Exception(Marshal.GetLastWin32Error(), \"Windows could not send text to the focused app.\");\n      count++;\n    }\n    return count;\n  }\n}\n'@\nAdd-Type -TypeDefinition $code -Language CSharp\n$text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__BASE64__'))\n$count = [UltronUnicodeInput]::Type($text)\n[Console]::WriteLine(('TYPED:' + $count))".replace("__BASE64__", encodedText);
+    runPowerShell(script, 15000);
+    return "Typed the dictated text into the currently focused app or website.";
+  }
   async function openFolder(name) {
     const key = String(name || "").trim().toLowerCase();
     const known = FOLDER_PATHS[key];
@@ -537,6 +553,8 @@ if ($closed -eq 0) { throw 'Windows could not close that app. It may require adm
         return { reply: closeApp(args.name) };
       case "boost_speech_volume":
         return { reply: boostSpeechVolume() };
+      case "type_text":
+        return { reply: typeText(args.text) };
       case "open_folder":
         return { reply: await openFolder(args.name) };
       case "list_desktop_folders": {
