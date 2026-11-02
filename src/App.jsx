@@ -98,6 +98,8 @@ export default function App() {
   const desktopMediaStreamRef = useRef(null);
   const desktopMediaRecorderRef = useRef(null);
   const desktopAudioContextRef = useRef(null);
+  const desktopSpeechAudioContextRef = useRef(null);
+  const desktopSpeechSourceRef = useRef(null);
   const dictatingRef = useRef(false);
   const dictationToggleRef = useRef(null);
 
@@ -107,6 +109,15 @@ export default function App() {
   };
   const setPerm = (key, value) => setPermissions((p) => ({ ...p, [key]: value }));
   const add = (role, text) => setMessages((m) => [...m, { role, text, time: new Date().toLocaleTimeString() }]);
+
+  const stopAmplifiedDesktopSpeech = () => {
+    const source = desktopSpeechSourceRef.current;
+    const context = desktopSpeechAudioContextRef.current;
+    desktopSpeechSourceRef.current = null;
+    desktopSpeechAudioContextRef.current = null;
+    try { source?.stop(); } catch {}
+    try { if (context && context.state !== "closed") context.close().catch(() => {}); } catch {}
+  };
 
   // Android speech-recognition 7.0.1 can stop listening but leave its stop()
   // promise pending. Never await it on the command path.
@@ -195,6 +206,7 @@ export default function App() {
     try { rec.current?.stop(); } catch {}
     if (IS_NATIVE_ANDROID) stopAndroidRecognition();
     try { window.speechSynthesis?.cancel(); } catch {}
+    stopAmplifiedDesktopSpeech();
     if (IS_NATIVE_ANDROID) { try { await TextToSpeech.stop(); } catch {} }
     setListening(false);
     setArmState(false);
@@ -234,12 +246,48 @@ export default function App() {
 
     if (IS_NATIVE_DESKTOP && pairedToken) {
       try {
-        await localFetch("/api/action/execute", {
+        try { window.speechSynthesis?.cancel(); } catch {}
+        stopAmplifiedDesktopSpeech();
+        setSpeaking(true);
+        const response = await localFetch("/api/speech", {
           method: "POST",
-          body: JSON.stringify({ action: "boost_speech_volume", args: {} })
+          body: JSON.stringify({ text: spokenText, language: lang })
         });
-      } catch (volumeError) {
-        console.warn("ULTRON could not raise Windows speaker volume.", volumeError);
+        if (!response.ok) {
+          let detail = "Windows amplified voice is unavailable.";
+          try { detail = (await response.json()).detail || detail; } catch {}
+          throw new Error(detail);
+        }
+        const wav = await response.arrayBuffer();
+        const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+        if (!AudioContextClass) throw new Error("This Windows audio engine does not support amplified playback.");
+        const context = new AudioContextClass();
+        desktopSpeechAudioContextRef.current = context;
+        if (context.state === "suspended") await context.resume();
+        const decoded = await context.decodeAudioData(wav.slice(0));
+        const source = context.createBufferSource();
+        const gain = context.createGain();
+        source.buffer = decoded;
+        gain.gain.value = 1.6;
+        source.connect(gain);
+        gain.connect(context.destination);
+        desktopSpeechSourceRef.current = source;
+        await new Promise((resolve, reject) => {
+          source.onended = () => {
+            if (desktopSpeechSourceRef.current === source) desktopSpeechSourceRef.current = null;
+            if (desktopSpeechAudioContextRef.current === context) desktopSpeechAudioContextRef.current = null;
+            try { context.close().catch(() => {}); } catch {}
+            setSpeechBeat((value) => value + 1);
+            setSpeaking(false);
+            resolve();
+          };
+          try { source.start(0); } catch (playError) { reject(playError); }
+        });
+        return;
+      } catch (voiceError) {
+        stopAmplifiedDesktopSpeech();
+        setSpeaking(false);
+        console.warn("ULTRON amplified Windows voice failed; falling back to browser speech.", voiceError);
       }
     }
 
@@ -1328,6 +1376,7 @@ export default function App() {
               const next = !muted;
               setMuted(next);
               if (next && "speechSynthesis" in window) window.speechSynthesis.cancel();
+              if (next && IS_NATIVE_DESKTOP) stopAmplifiedDesktopSpeech();
               if (next && IS_NATIVE_ANDROID) TextToSpeech.stop().catch(() => {});
               if (next) setSpeaking(false);
             }} title={muted ? "Unmute voice" : "Mute voice"}>{muted ? <VolumeX /> : <Volume2 />}</button>
