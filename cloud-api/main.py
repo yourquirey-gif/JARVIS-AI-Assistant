@@ -32,6 +32,7 @@ LOCAL_PATTERNS = [
     r"\b(turn on|turn off|enable|disable)\b.{0,40}\b(wi-?fi|bluetooth|airplane mode)\b",
     r"\b(close|switch|manage)\b.{0,35}\b(tab|tabs|window|windows)\b",
     r"\b(delete|remove|trash|erase)\b.{0,80}\b(file|document|pdf|image|photo)\b",
+    r"(?:डिलीट|मिटा|हटा)\b.{0,80}\b(फाइल|दस्तावेज|फोटो|तस्वीर)\b",
 ]
 
 class SiteSearchRequest(BaseModel):
@@ -248,8 +249,8 @@ async def chat(data: ChatRequest, request: Request):
     messages = [{
         "role": "system",
         "content": (
-            "You are ULTRON, a helpful personal AI assistant. Reply naturally and concisely. "
-            "Reply in Hindi when the user speaks Hindi, otherwise use English. "
+            "You are ULTRON, a courteous personal AI assistant. Always address the user as Sir. "
+            "Use clear English for website choices and action confirmations. Reply in the user's language for general explanations. "
             "You are a cloud assistant and cannot access the user's computer, files, microphone, camera, or devices. "
             "Never claim to have performed a PC action. For computer control, explain that the paired ULTRON PC companion is required."
         )
