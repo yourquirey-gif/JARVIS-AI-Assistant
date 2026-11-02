@@ -1,4 +1,4 @@
-const { app, BrowserWindow, dialog, ipcMain, session, shell } = require("electron");
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, session, shell } = require("electron");
 const path = require("path");
 const crypto = require("crypto");
 const { createPcService } = require("./pc-service.cjs");
@@ -122,7 +122,7 @@ async function askPcAccess(force) {
     type: "question",
     title: "Allow ULTRON to connect to this PC?",
     message: "ULTRON wants permission to control approved actions on this Windows computer.",
-    detail: "When allowed, ULTRON can open selected apps and websites and read basic system information. Each PC action still requires an in-app confirmation. Denying this request leaves PC access switched off. You can change this later in Permissions.",
+    detail: "When allowed, ULTRON can open installed apps, close supported apps, type dictated text into the currently focused app or website, and read basic system information. Apps with unsaved work will not be force-closed. Dictation sends short microphone clips to ULTRON Whisper for transcription. Denying this request leaves PC access switched off. You can change this later in Permissions.",
     buttons: ["Allow PC connection", "Deny"],
     defaultId: 0,
     cancelId: 1,
@@ -230,6 +230,12 @@ if (!hasSingleInstanceLock) {
       callback(false);
     });
 
+    const shortcutReady = globalShortcut.register("Control+Alt+D", () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send("ultron:dictation-toggle");
+      }
+    });
+    if (!shortcutReady) console.warn("ULTRON could not register Ctrl+Alt+D; use the Dictate Anywhere button.");
     createWindow();
     app.on("activate", () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -263,6 +269,7 @@ ipcMain.handle("ultron:revoke-all", async () => {
 
 app.on("before-quit", () => {
   quitting = true;
+  globalShortcut.unregisterAll();
   stopPcService();
   micAllowed = false;
 });
