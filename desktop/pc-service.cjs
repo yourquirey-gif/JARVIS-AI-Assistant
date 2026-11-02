@@ -304,7 +304,8 @@ function createPcService(options) {
       "    $prefix = $language.Substring(0, 2)",
       "    $selected = @($voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -ieq $prefix })",
       "  }",
-      "  if ($selected.Count -gt 0) { $synth.SelectVoice($selected[0].VoiceInfo.Name) }",
+      "  if ($selected.Count -eq 0) { throw \"No installed Windows speech voice is available for $language.\" }",
+      "  $synth.SelectVoice($selected[0].VoiceInfo.Name)",
       "  $synth.Volume = 100",
       "  $synth.Rate = 0",
       "  $synth.SetOutputToWaveFile($outputPath)",
@@ -584,8 +585,6 @@ if ($remaining.Count -gt 0) { throw 'The app window is still open. It may have u
         return { reply: await launchApp(args.name) };
       case "close_app":
         return { reply: closeApp(args.name) };
-      case "boost_speech_volume":
-        return { reply: boostSpeechVolume() };
       case "type_text":
         return { reply: typeText(args.text) };
       case "open_folder":
