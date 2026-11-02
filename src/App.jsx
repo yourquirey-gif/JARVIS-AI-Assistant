@@ -230,8 +230,9 @@ export default function App() {
   };
 
   const speak = async (text) => {
-    const spokenText = String(text || "").trim();
-    if (!spokenText || muted) { setSpeaking(false); return; }
+    const rawSpokenText = String(text || "").trim();
+    if (!rawSpokenText || muted) { setSpeaking(false); return; }
+    const spokenText = /^(?:certainly,\s*)?sir\b/i.test(rawSpokenText) ? rawSpokenText : "Sir, " + rawSpokenText;
 
     if (IS_NATIVE_ANDROID) {
       try {
@@ -279,10 +280,10 @@ export default function App() {
         const gain = context.createGain();
         const compressor = context.createDynamicsCompressor();
         source.buffer = decoded;
-        gain.gain.value = 1.8;
-        compressor.threshold.setValueAtTime(-7, context.currentTime);
-        compressor.knee.setValueAtTime(4, context.currentTime);
-        compressor.ratio.setValueAtTime(10, context.currentTime);
+        gain.gain.value = 1.45;
+        compressor.threshold.setValueAtTime(-1.5, context.currentTime);
+        compressor.knee.setValueAtTime(3, context.currentTime);
+        compressor.ratio.setValueAtTime(4, context.currentTime);
         compressor.attack.setValueAtTime(0.003, context.currentTime);
         compressor.release.setValueAtTime(0.18, context.currentTime);
         source.connect(gain);
@@ -495,7 +496,11 @@ export default function App() {
   };
 
   const searchAndOpenWebsite = async (query) => {
-    const cleanQuery = String(query || "").trim().replace(/\s+(?:website|site|web page|page)$/i, "").trim();
+    const cleanQuery = String(query || "").trim()
+      .replace(/^(?:please\s+)?(?:the\s+)?(?:website|site|web page)(?:\s+(?:called|named))?\s+/i, "")
+      .replace(/^(?:please\s+)?(?:open|visit|go to)\s+/i, "")
+      .replace(/\s+(?:website|site|web page|page)$/i, "")
+      .trim();
     if (!cleanQuery) throw new Error("Sir, please tell me the website name.");
     const direct = /^(?:https?:\/\/)?[a-z0-9-]+(?:\.[a-z0-9-]+)+(?:\/[^\s]*)?$/i.test(cleanQuery);
     if (direct) {
@@ -774,9 +779,7 @@ export default function App() {
           stopAndroidRecognition();
           await new Promise((resolve) => window.setTimeout(resolve, 300));
         }
-        const greeting = lang.startsWith("hi")
-          ? "जी, मैं सुन रहा हूँ। बताइए क्या करना है?"
-          : "I'm listening. What would you like me to do?";
+        const greeting = "Yes, Sir. I am listening. What would you like me to do?";
         add("assistant", greeting);
         await speak(greeting);
       }
@@ -1232,7 +1235,7 @@ export default function App() {
             }
           }
         } catch (transcriptionError) {
-          setError(transcriptionError?.message || "Voice transcription interrupted. ULTRON will keep listening.");
+          setError("Sir, " + (transcriptionError?.message || "voice transcription was interrupted. ULTRON will keep listening."));
           await new Promise((resolve) => window.setTimeout(resolve, 1000));
         }
         if (listeningRef.current) setStatus("LISTENING · ULTRON WHISPER");
