@@ -136,6 +136,24 @@ async function main() {
     assert.strictEqual(typed.data.proposed_action.name, "type_text");
     assert.strictEqual(typed.data.proposed_action.args.text, "Hello ULTRON");
 
+    const deleteCandidate = await request("POST", "/api/command", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { message: "delete old-notes.pdf from downloads", language: "en-IN" }
+    });
+    assert.strictEqual(deleteCandidate.status, 200);
+    assert.strictEqual(deleteCandidate.data.proposed_action.name, "delete_item");
+    assert.deepStrictEqual(deleteCandidate.data.proposed_action.args, { folder: "downloads", name: "old-notes.pdf" });
+
+    const directUrl = await request("POST", "/api/command", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { message: "open https://example.com", language: "en-IN" }
+    });
+    assert.strictEqual(directUrl.status, 200);
+    assert.strictEqual(directUrl.data.proposed_action.name, "open_url");
+    assert.strictEqual(directUrl.data.proposed_action.args.url, "https://example.com");
+
     const unauthorizedSpeech = await request("POST", "/api/speech", {
       origin: ORIGIN,
       body: { text: "test speech", language: "en-IN" }
@@ -174,6 +192,13 @@ async function main() {
     assert.strictEqual(action.status, 200);
     assert.strictEqual(action.data.ok, true);
     assert.deepStrictEqual(opened, ["https://www.google.com"]);
+    const directOpen = await request("POST", "/api/action/execute", {
+      origin: ORIGIN,
+      token: TOKEN,
+      body: { action: "open_url", args: { url: "https://example.com/" } }
+    });
+    assert.strictEqual(directOpen.status, 200);
+    assert.deepStrictEqual(opened, ["https://www.google.com", "https://example.com/"]);
 
     const invalidAction = await request("POST", "/api/action/execute", {
       origin: ORIGIN,
