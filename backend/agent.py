@@ -152,6 +152,53 @@ def type_text(value):
 
     return "Typed the requested text into the currently focused app or website."
 
+def delete_user_file(folder, name):
+    """Move one explicitly named file from a standard user folder to the Windows Recycle Bin."""
+    if platform.system() != "Windows":
+        raise ValueError("File deletion is available in the Windows desktop companion only.")
+    key = str(folder or "").strip().lower()
+    folder_name = FOLDER_NAMES.get(key)
+    filename = str(name or "").strip()
+    if not folder_name:
+        raise ValueError("Choose Desktop, Documents, Downloads, Pictures, Music, or Videos.")
+    if (not filename or len(filename) > 180 or filename in (".", "..")
+            or Path(filename).name != filename or any(ch in filename for ch in '\\\\/:<>:"|?*')):
+        raise ValueError("Provide one exact file name without a folder path.")
+    root = (Path.home() / folder_name).resolve()
+    target = (root / filename).resolve()
+    if target.parent != root:
+        raise ValueError("The requested item is outside the selected user folder.")
+    if not target.exists() or target.is_symlink() or not target.is_file():
+        raise ValueError("For safety, ULTRON can move one existing regular file, not a folder or link.")
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [
+            ("hwnd", wintypes.HWND),
+            ("wFunc", wintypes.UINT),
+            ("pFrom", wintypes.LPCWSTR),
+            ("pTo", wintypes.LPCWSTR),
+            ("fFlags", wintypes.WORD),
+            ("fAnyOperationsAborted", wintypes.BOOL),
+            ("hNameMappings", ctypes.c_void_p),
+            ("lpszProgressTitle", wintypes.LPCWSTR),
+        ]
+    source = ctypes.create_unicode_buffer(str(target) + "\0")
+    operation = SHFILEOPSTRUCTW()
+    operation.hwnd = None
+    operation.wFunc = 3  # FO_DELETE
+    operation.pFrom = ctypes.cast(source, wintypes.LPCWSTR)
+    operation.pTo = None
+    operation.fFlags = 0x0040 | 0x0010 | 0x0004 | 0x0400  # Recycle Bin, quiet UI
+    operation.fAnyOperationsAborted = False
+    operation.hNameMappings = None
+    operation.lpszProgressTitle = None
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    shell32.SHFileOperationW.argtypes = [ctypes.POINTER(SHFILEOPSTRUCTW)]
+    shell32.SHFileOperationW.restype = ctypes.c_int
+    result = int(shell32.SHFileOperationW(ctypes.byref(operation)))
+    if result != 0 or operation.fAnyOperationsAborted:
+        raise OSError("Windows could not move the selected file to the Recycle Bin (error {}).".format(result))
+    return "Moved {} from {} to the Windows Recycle Bin. You can restore it from there.".format(filename, key)
+
 def open_folder(name):
     key = str(name).strip().lower()
     folder = FOLDER_NAMES.get(key)
