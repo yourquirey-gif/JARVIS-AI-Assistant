@@ -227,6 +227,17 @@ export default function App() {
       }
     }
 
+    if (IS_NATIVE_DESKTOP && pairedToken) {
+      try {
+        await localFetch("/api/action/execute", {
+          method: "POST",
+          body: JSON.stringify({ action: "boost_speech_volume", args: {} })
+        });
+      } catch (volumeError) {
+        console.warn("ULTRON could not raise Windows speaker volume.", volumeError);
+      }
+    }
+
     if (!("speechSynthesis" in window)) {
       setError("Voice output is unavailable on this device. Text replies are still shown on screen.");
       setSpeaking(false);
@@ -260,8 +271,8 @@ export default function App() {
         || voices[0];
       const utterance = new SpeechSynthesisUtterance(spokenText);
       utterance.lang = lang;
-      utterance.rate = 0.88;
-      utterance.pitch = 0.58;
+      utterance.rate = 0.92;
+      utterance.pitch = 0.76;
       utterance.volume = 1;
       if (selected) utterance.voice = selected;
       setSpeaking(true);
