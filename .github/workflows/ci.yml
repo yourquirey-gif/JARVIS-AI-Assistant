@@ -22,6 +22,11 @@ jobs:
         with:
           python-version: "3.11"
       - run: pip install -r cloud-api/requirements.txt
+      - run: pip install psutil==5.9.8
       - run: python -m compileall -q backend cloud-api
-      - name: Verify the Whisper transcription route is registered
-        run: python -c "import sys; sys.path.insert(0, 'cloud-api'); from main import app; assert any(route.path == '/api/transcribe' for route in app.routes); print('ULTRON Whisper route is ready.')"
+      - name: Verify cloud routes, website result parser, and approved actions
+        run: |
+          python -c "import sys; sys.path.insert(0, 'cloud-api'); from main import app, DuckDuckGoResultParser, validate_action; paths={route.path for route in app.routes}; assert '/api/transcribe' in paths and '/api/search-sites' in paths; p=DuckDuckGoResultParser(); p.feed('<a class=\"result__a\" href=\"https://example.test/\">Example Site</a>'); assert p.results[0]['domain']=='example.test'; assert validate_action({'name':'search_website','args':{'query':'example site'}}); assert validate_action({'name':'delete_item','args':{'folder':'downloads','name':'notes.pdf'}}); print('ULTRON cloud routes, site parser and action validation passed.')"
+      - name: Verify legacy PC companion text and delete commands
+        run: |
+          python -c "import sys; sys.path.insert(0, 'backend'); from main import detect_action; assert detect_action('write Hello ULTRON')['name']=='type_text'; d=detect_action('delete notes.pdf from downloads'); assert d['name']=='delete_item' and d['args']['name']=='notes.pdf'; print('ULTRON Python companion action routing passed.')"
