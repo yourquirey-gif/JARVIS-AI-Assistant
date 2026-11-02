@@ -1,5 +1,7 @@
 """Safe, allowlisted Windows actions for the ULTRON local companion."""
 import os
+import ctypes
+from ctypes import wintypes
 import platform
 import subprocess
 import webbrowser
@@ -61,6 +63,94 @@ def launch_app(name):
         raise ValueError("Application is not in the approved app list or is unsupported.")
     subprocess.Popen(command, shell=False)
     return "Launched {}.".format(key.title())
+
+def type_text(value):
+    """Type Unicode text into the currently focused Windows control."""
+    if platform.system() != "Windows":
+        raise ValueError("Typing into other apps is supported on Windows desktop only.")
+    text = str(value or "")
+    if not text.strip() or len(text) > 1000:
+        raise ValueError("Dictation text must contain 1 to 1000 characters.")
+
+    INPUT_KEYBOARD = 1
+    KEYEVENTF_KEYUP = 0x0002
+    KEYEVENTF_UNICODE = 0x0004
+    VK_RETURN = 0x0D
+    VK_TAB = 0x09
+
+    class MOUSEINPUT(ctypes.Structure):
+        _fields_ = [("dx", wintypes.LONG), ("dy", wintypes.LONG),
+                    ("mouseData", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
+                    ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+    class KEYBDINPUT(ctypes.Structure):
+        _fields_ = [("wVk", wintypes.WORD), ("wScan", wintypes.WORD),
+                    ("dwFlags", wintypes.DWORD), ("time", wintypes.DWORD),
+                    ("dwExtraInfo", ctypes.c_size_t)]
+
+    class HARDWAREINPUT(ctypes.Structure):
+        _fields_ = [("uMsg", wintypes.DWORD), ("wParamL", wintypes.WORD),
+                    ("wParamH", wintypes.WORD)]
+
+    class INPUTUNION(ctypes.Union):
+        _fields_ = [("mi", MOUSEINPUT), ("ki", KEYBDINPUT), ("hi", HARDWAREINPUT)]
+
+    class INPUT(ctypes.Structure):
+        _anonymous_ = ("data",)
+        _fields_ = [("type", wintypes.DWORD), ("data", INPUTUNION)]
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    send_input = user32.SendInput
+    send_input.argtypes = [wintypes.UINT, ctypes.POINTER(INPUT), ctypes.c_int]
+    send_input.restype = wintypes.UINT
+
+    events = []
+
+    def add_key(vk, flags):
+        down = INPUT()
+        down.type = INPUT_KEYBOARD
+        down.ki = KEYBDINPUT(vk, 0, flags, 0, 0)
+        up = INPUT()
+        up.type = INPUT_KEYBOARD
+        up.ki = KEYBDINPUT(vk, 0, flags | KEYEVENTF_KEYUP, 0, 0)
+        events.extend((down, up))
+
+    def add_unicode(unit):
+        down = INPUT()
+        down.type = INPUT_KEYBOARD
+        down.ki = KEYBDINPUT(0, unit, KEYEVENTF_UNICODE, 0, 0)
+        up = INPUT()
+        up.type = INPUT_KEYBOARD
+        up.ki = KEYBDINPUT(0, unit, KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, 0, 0)
+        events.extend((down, up))
+
+    for character in text:
+        if character == "\r":
+            continue
+        if character == "\n":
+            add_key(VK_RETURN, 0)
+        elif character == "\t":
+            add_key(VK_TAB, 0)
+        else:
+            units = character.encode("utf-16-le", errors="surrogatepass")
+            for offset in range(0, len(units), 2):
+                add_unicode(units[offset] | (units[offset + 1] << 8))
+
+    if not events:
+        raise ValueError("No text characters were available to type.")
+
+    for offset in range(0, len(events), 256):
+        batch_items = events[offset:offset + 256]
+        batch = (INPUT * len(batch_items))(*batch_items)
+        ctypes.set_last_error(0)
+        sent = int(send_input(len(batch), batch, ctypes.sizeof(INPUT)))
+        if sent != len(batch):
+            code = ctypes.get_last_error()
+            if code == 5:
+                raise OSError("Windows blocked typing into the focused app. Make sure the target app is not running as Administrator and is in the foreground.")
+            raise OSError("Windows accepted only {} of {} keyboard events (error {}). Click the target text field and try again.".format(sent, len(batch), code))
+
+    return "Typed the requested text into the currently focused app or website."
 
 def open_folder(name):
     key = str(name).strip().lower()
