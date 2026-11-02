@@ -1,5 +1,5 @@
 {
-  "version": "1.0.9",
+  "version": "1.1.0",
   "download": "/downloads/ULTRON-Windows-Setup.exe",
-  "releaseNotes": "Windows 1.0.9: automatically selects a free local PC-service port when the legacy port is occupied. Installer supports Authenticode signing when signing secrets are configured."
+  "releaseNotes": "Windows 1.1.0: Whisper voice input, continuous listening, one-time PC access for allowlisted commands, deeper voice output, and live CPU/RAM/disk/network/process monitoring."
 }

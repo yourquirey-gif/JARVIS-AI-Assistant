@@ -6,7 +6,7 @@ from collections import defaultdict, deque
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -91,6 +91,59 @@ def validate_action(action):
 async def health():
     return {"ok": True, "service": "ULTRON Cloud AI API", "model": GROQ_MODEL}
 
+@app.post("/api/transcribe")
+async def transcribe(request: Request, file: UploadFile = File(...), language: str = Form("auto")):
+    """Transcribe a short ULTRON voice command with Groq Whisper."""
+    rate_limit(request)
+    if not GROQ_API_KEY:
+        raise HTTPException(503, "Voice transcription is not configured. Add GROQ_API_KEY in the Render service environment.")
+
+    filename = os.path.basename(file.filename or "ultron-command.webm")
+    content_type = (file.content_type or "audio/webm").split(";", 1)[0].strip().lower()
+    allowed_types = {"audio/webm", "audio/ogg", "audio/wav", "audio/x-wav", "audio/mp4", "audio/mpeg", "audio/mp3"}
+    if content_type not in allowed_types and not filename.lower().endswith((".webm", ".ogg", ".wav", ".m4a", ".mp3", ".mp4")):
+        raise HTTPException(415, "Unsupported microphone audio format.")
+
+    audio = await file.read(15 * 1024 * 1024 + 1)
+    await file.close()
+    if not audio:
+        raise HTTPException(400, "No microphone audio was captured. Please speak again.")
+    if len(audio) > 15 * 1024 * 1024:
+        raise HTTPException(413, "Voice recording is too large. Please use a shorter command.")
+
+    language_code = (language or "auto").split("-", 1)[0].strip().lower()
+    if not re.fullmatch(r"[a-z]{2}", language_code):
+        language_code = ""
+    form = {
+        "model": "whisper-large-v3-turbo",
+        "response_format": "json",
+        "temperature": "0",
+        "prompt": "ULTRON computer voice command. Common names: ULTRON, YouTube, Google, Chrome, Notepad, Calculator, WhatsApp, Downloads, Desktop, Documents. Preserve Hindi and English words as spoken."
+    }
+    if language_code:
+        form["language"] = language_code
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(35.0, connect=10.0)) as client:
+            response = await client.post(
+                "https://api.groq.com/openai/v1/audio/transcriptions",
+                headers={"Authorization": "Bearer " + GROQ_API_KEY},
+                data=form,
+                files={"file": (filename, audio, content_type)},
+            )
+        response.raise_for_status()
+        transcript = str(response.json().get("text") or "").strip()
+        if not transcript:
+            raise HTTPException(422, "I could not hear a clear command. Please speak a little closer to the microphone.")
+        return {"text": transcript[:2000], "engine": "whisper-large-v3-turbo"}
+    except HTTPException:
+        raise
+    except httpx.TimeoutException:
+        raise HTTPException(504, "Voice transcription timed out. Check your internet connection and try again.")
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, "The voice transcription provider returned HTTP {}.".format(exc.response.status_code))
+    except httpx.HTTPError:
+        raise HTTPException(502, "Could not connect to the voice transcription service. Check your internet connection and try again.")
+
 @app.post("/api/chat")
 async def chat(data: ChatRequest, request: Request):
     rate_limit(request)
@@ -141,7 +194,7 @@ async def plan(data: ChatRequest, request: Request):
         "list_desktop_folders with empty args. "
         "For a web search request, use open_url with a Google search URL only if the user clearly asked to search the web. "
         "Do not invent parameters. If the requested operation is unsupported, unsafe, destructive, sends/purchases anything, accesses credentials, executes shell commands, deletes/changes data, restarts or shuts down the PC, return a chat response explaining the limitation. "
-        "Never classify a normal question about how to do something as a PC action. A PC action still requires the user to approve it in the ULTRON interface."
+        "Never classify a normal question about how to do something as a PC action. The user has already granted PC access in ULTRON. An explicit, clearly requested action from the paired local companion may execute without a second per-command approval prompt. Only the exact allowlisted actions above are executable; never invent or expand the allowlist."
     )
     messages = [{"role": "system", "content": system}]
     messages.extend(clean_history(data.history))

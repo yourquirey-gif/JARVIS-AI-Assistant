@@ -214,60 +214,74 @@ function createPcService(options) {
     const totalMemory = os.totalmem();
     const freeMemory = os.freemem();
     let diskPercent = 0;
+    let diskTotalGb = 0;
+    let diskFreeGb = 0;
     let networkSentMb = 0;
     let networkRecvMb = 0;
     let battery = null;
+    let processCount = 0;
+    let topProcesses = [];
 
     if (process.platform === "win32") {
-      const drive = String(process.env.SystemDrive || "C:").replace(/'/g, "");
-      const diskText = runWmic([
-        "logicaldisk", "where", "DeviceID='" + drive + "'",
-        "get", "FreeSpace,Size", "/value"
-      ]);
+      const drive = String(process.env.SystemDrive || "C:").replace(/\x27/g, "");
+      const diskText = runWmic(["logicaldisk", "where", "DeviceID=\x27" + drive + "\x27", "get", "FreeSpace,Size", "/value"]);
       const freeMatch = diskText.match(/FreeSpace\s*=\s*(\d+)/i);
       const sizeMatch = diskText.match(/Size\s*=\s*(\d+)/i);
       if (freeMatch && sizeMatch && Number(sizeMatch[1]) > 0) {
-        diskPercent = Math.round((1 - Number(freeMatch[1]) / Number(sizeMatch[1])) * 1000) / 10;
+        const freeBytes = Number(freeMatch[1]);
+        const sizeBytes = Number(sizeMatch[1]);
+        diskFreeGb = Math.round(freeBytes / 1073741824 * 10) / 10;
+        diskTotalGb = Math.round(sizeBytes / 1073741824 * 10) / 10;
+        diskPercent = Math.round((1 - freeBytes / sizeBytes) * 1000) / 10;
       }
 
-      const networkText = runWmic(["nic", "get", "BytesReceivedPerSec,BytesSentPerSec"]);
-      const netstatText = (() => {
-        try {
-          return execFileSync("netstat.exe", ["-e"], {
-            encoding: "utf8", windowsHide: true, timeout: 2500,
-            stdio: ["ignore", "pipe", "ignore"]
-          });
-        } catch (_) {
-          return networkText;
+      try {
+        const networkText = execFileSync("netstat.exe", ["-e"], { encoding: "utf8", windowsHide: true, timeout: 3000, stdio: ["ignore", "pipe", "ignore"] });
+        const bytesMatch = networkText.match(/Bytes\s+([\d,]+)\s+([\d,]+)/i);
+        if (bytesMatch) {
+          networkRecvMb = Math.round(Number(bytesMatch[1].replace(/,/g, "")) / 1048576 * 10) / 10;
+          networkSentMb = Math.round(Number(bytesMatch[2].replace(/,/g, "")) / 1048576 * 10) / 10;
         }
-      })();
-      const bytesMatch = netstatText.match(/Bytes\s+([\d,]+)\s+([\d,]+)/i);
-      if (bytesMatch) {
-        networkRecvMb = Math.round(Number(bytesMatch[1].replace(/,/g, "")) / 1048576 * 10) / 10;
-        networkSentMb = Math.round(Number(bytesMatch[2].replace(/,/g, "")) / 1048576 * 10) / 10;
-      }
+      } catch {}
 
-      const batteryText = runWmic([
-        "path", "Win32_Battery", "get", "EstimatedChargeRemaining", "/value"
-      ]);
+      const batteryText = runWmic(["path", "Win32_Battery", "get", "EstimatedChargeRemaining", "/value"]);
       const batteryMatch = batteryText.match(/EstimatedChargeRemaining\s*=\s*(\d+)/i);
-      if (batteryMatch) {
-        battery = { percent: Number(batteryMatch[1]), plugged_in: false };
-      }
+      if (batteryMatch) battery = { percent: Number(batteryMatch[1]), plugged_in: false };
+
+      try {
+        const taskText = execFileSync("tasklist.exe", ["/FO", "CSV", "/NH"], { encoding: "utf8", windowsHide: true, timeout: 5000, stdio: ["ignore", "pipe", "ignore"] });
+        const rows = taskText.split(/\r?\n/).filter(Boolean);
+        const parsed = rows.map((row) => {
+          const columns = row.match(/"(?:[^"]|"")*"|[^,]+/g) || [];
+          const values = columns.map((value) => value.replace(/^"/, "").replace(/"$/, "").replace(/""/g, "\x22"));
+          const memoryKb = Number(String(values[4] || "").replace(/[^\d]/g, "")) || 0;
+          return { name: String(values[0] || "Unknown").slice(0, 40), pid: Number(values[1]) || 0, memory_mb: Math.round(memoryKb / 1024 * 10) / 10 };
+        }).filter((item) => item.pid > 0);
+        processCount = parsed.length;
+        topProcesses = parsed.sort((x, y) => y.memory_mb - x.memory_mb).slice(0, 6);
+      } catch {}
     }
 
+    const usedMemory = Math.max(0, totalMemory - freeMemory);
     return {
       platform: process.platform === "win32" ? "Windows " + os.release() : os.type() + " " + os.release(),
       cpu_percent: cpuUsage(),
-      memory_percent: totalMemory ? Math.round((1 - freeMemory / totalMemory) * 1000) / 10 : 0,
+      memory_percent: totalMemory ? Math.round((usedMemory / totalMemory) * 1000) / 10 : 0,
       memory_total_gb: Math.round(totalMemory / 1073741824 * 10) / 10,
+      memory_used_gb: Math.round(usedMemory / 1073741824 * 10) / 10,
+      memory_free_gb: Math.round(freeMemory / 1073741824 * 10) / 10,
       disk_percent: diskPercent,
+      disk_total_gb: diskTotalGb,
+      disk_free_gb: diskFreeGb,
+      disk_used_gb: Math.max(0, Math.round((diskTotalGb - diskFreeGb) * 10) / 10),
       network_sent_mb: networkSentMb,
       network_recv_mb: networkRecvMb,
+      process_count: processCount,
+      top_processes: topProcesses,
+      uptime_seconds: Math.round(os.uptime()),
       battery
     };
   }
-
   async function openWebsite(name) {
     const key = String(name || "").trim().toLowerCase();
     if (!Object.prototype.hasOwnProperty.call(WEBSITES, key)) {
@@ -391,7 +405,7 @@ function createPcService(options) {
           service: "ULTRON Local PC Companion",
           automation_enabled: automationEnabled,
           paired: Boolean(token),
-          version: "1.0.8",
+          version: "1.1.0",
           engine: "electron-node"
         });
       }

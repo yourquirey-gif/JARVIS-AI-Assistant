@@ -6,7 +6,7 @@ ULTRON is a voice-first assistant with a Glass Wave Blob hologram, a Hindi/Engli
 
 1. **Web / PWA** — browser voice and chat, responsive interface and automatic web-update prompt. It cannot control other apps on a phone or access a computer's local applications.
 2. **Android app** — a separate Capacitor APK with native speech recognition and voice output. It can open a small, declared set of apps (WhatsApp, YouTube, Chrome, Gmail, Maps, Phone, Messages, Calculator, Play Store and Settings) from direct tap controls or simple direct voice commands. It does not read other apps' screens or type into them. It checks its Android update manifest and asks the user to approve an APK installation when a new build is published.
-3. **Windows desktop app** — Electron shell with a built-in Node.js local PC service. It no longer launches a separate Python/PyInstaller executable. At first launch it requests separate PC-connection and microphone consent. When PC access is allowed, the service starts inside Electron on loopback and the trusted ULTRON website pairs automatically. PC actions still require in-app approval.
+3. **Windows desktop app** — Electron shell with a built-in Node.js local PC service. It no longer launches a separate Python/PyInstaller executable. At first launch it requests separate PC-connection and microphone consent. When PC access is allowed, the service starts inside Electron on the first available loopback port (starting at 8765) and the trusted ULTRON website pairs automatically. Clearly requested actions on ULTRON's strict allowlist run without a second approval prompt; the initial PC-access grant remains the user's consent boundary.
 
 ## Update behavior
 
@@ -25,9 +25,9 @@ The current Android APK supports native speech recognition and voice output. It 
 
 ## Windows PC access
 
-The built-in local service binds only to `127.0.0.1:8765`. The desktop process generates a random token and allowlists only the exact HTTPS origin it loads. Closing ULTRON stops the listener and clears runtime permission state. Each local PC action requires an in-app approval. No Python runtime or separate PC-service executable is required.
+The built-in local service binds only to `127.0.0.1`, selecting the first available port from 8765 onward. The desktop process generates a random token and allowlists only the exact HTTPS origin it loads. Closing ULTRON stops the listener and clears runtime permission state. After the user grants PC connection once, explicit commands in the approved action list do not require repeated per-command approval. No Python runtime or separate PC-service executable is required.
 
-Currently allowed PC actions include opening selected websites, launching selected built-in applications, opening standard user folders and reading basic CPU/RAM/disk/network/battery status. Arbitrary shell execution, passwords, destructive changes, silent recording, purchases and sending messages are not enabled.
+Currently allowed PC actions include opening selected websites, launching selected built-in applications, opening standard user folders, listing desktop folders and reading CPU/RAM/disk/network/battery status plus a short process list. Arbitrary shell execution, passwords, destructive changes, silent recording, purchases and sending messages remain disabled.
 
 ## Windows compatibility
 
@@ -61,3 +61,10 @@ Render: `GROQ_API_KEY` (private) and `GROQ_MODEL=openai/gpt-oss-120b`.
 - Android uses native speech recognition and native text-to-speech. Microphone permission is required for voice input; opening one of the declared app shortcuts does not request a broad phone-control permission.
 - The current Android release can open the selected apps. It does not read third-party app screens or type into arbitrary apps. Such automation is not enabled.
 - The website shows the exact latest APK version. Until the persistent signing key is configured in GitHub Actions, the published 1.0.4 APK is clean-install only; it is not advertised as an in-place update.
+
+## Windows voice and live system monitor
+
+- Windows desktop voice input uses microphone capture while the user has explicitly turned listening on, then sends each short audio clip to the configured ULTRON Cloud API for Groq Whisper transcription. The Groq key remains server-side. Hindi and English commands are supported through automatic language detection. A working internet connection and a configured `GROQ_API_KEY` are required; provider usage may be billable.
+- Windows text-to-speech uses the best matching installed system voice, prefers a male-sounding voice where Windows provides one, uses a lower pitch and the maximum speech API volume. The actual audible loudness also depends on the Windows speaker/output volume.
+- The live System Monitor refreshes every five seconds and displays CPU, RAM used/total, disk used/total, cumulative network sent/received, uptime, process count and the largest processes by memory.
+- Initial PC-connection consent is separate from microphone permission. Commands still run only when they match the local/Cloud planner's approved action list; unrestricted shell commands and destructive operations are not enabled.

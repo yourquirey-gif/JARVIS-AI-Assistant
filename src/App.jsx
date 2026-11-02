@@ -23,14 +23,14 @@ const IS_NATIVE_ANDROID = Capacitor.isNativePlatform() && Capacitor.getPlatform(
 const IS_MOBILE_DEVICE = IS_NATIVE_ANDROID || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
 const IS_NATIVE_DESKTOP = typeof window !== "undefined" && Boolean(window.ultronDesktop?.isNativeDesktop);
 const ACKNOWLEDGEMENTS = [
-  "Understood, sir. Initiating your command now.",
-  "Certainly, sir. Executing your request.",
-  "Acknowledged, sir. Proceeding with the operation.",
-  "Right away, sir. Your command is in motion.",
-  "On it, sir. Starting the requested task.",
-  "At once, sir. Initiating the operation.",
-  "Very well, sir. Carrying out your instruction.",
-  "Affirmative, sir. Proceeding now."
+  "Your order is complete, sir.",
+  "Done exactly as requested, sir.",
+  "Your command has been completed, sir.",
+  "At your service, sir. The task is complete.",
+  "Certainly, sir. Consider it done.",
+  "Executed successfully, sir.",
+  "Your instruction has been carried out, sir.",
+  "Completed as you asked, sir."
 ];
 
 function chooseAcknowledgement(previous) {
@@ -93,6 +93,10 @@ export default function App() {
   const ackRef = useRef("");
   const restartTimer = useRef(null);
   const nativeRecognitionRunning = useRef(false);
+  const whisperRecognitionRunning = useRef(false);
+  const desktopMediaStreamRef = useRef(null);
+  const desktopMediaRecorderRef = useRef(null);
+  const desktopAudioContextRef = useRef(null);
 
   const setArmState = (value) => {
     armedRef.current = value;
@@ -207,25 +211,13 @@ export default function App() {
 
   const speak = async (text) => {
     const spokenText = String(text || "").trim();
-    if (!spokenText || muted) {
-      setSpeaking(false);
-      return;
-    }
+    if (!spokenText || muted) { setSpeaking(false); return; }
 
-    // Android WebView speechSynthesis can be absent or silent on some devices.
-    // Use Android's native TTS engine first, then fall back to browser speech.
     if (IS_NATIVE_ANDROID) {
       try {
         try { await TextToSpeech.stop(); } catch {}
         setSpeaking(true);
-        await TextToSpeech.speak({
-          text: spokenText,
-          lang,
-          rate: 0.9,
-          pitch: 0.82,
-          volume: 1,
-          queueStrategy: 0
-        });
+        await TextToSpeech.speak({ text: spokenText, lang, rate: 0.86, pitch: 0.62, volume: 1, queueStrategy: 0 });
         setSpeechBeat((value) => value + 1);
         setSpeaking(false);
         return;
@@ -242,30 +234,56 @@ export default function App() {
     }
     try {
       window.speechSynthesis.cancel();
-      setSpeaking(false);
-      const utterance = new SpeechSynthesisUtterance(spokenText);
-      utterance.onstart = () => setSpeaking(true);
-      utterance.onboundary = () => setSpeechBeat((value) => value + 1);
-      utterance.onend = () => setSpeaking(false);
-      utterance.onerror = () => setSpeaking(false);
-      utterance.lang = lang;
-      utterance.rate = 0.9;
-      utterance.pitch = 0.78;
-      utterance.volume = 1;
-      const voices = window.speechSynthesis.getVoices() || [];
+      if (window.speechSynthesis.paused) window.speechSynthesis.resume();
+      let voices = window.speechSynthesis.getVoices() || [];
+      if (!voices.length) {
+        await new Promise((resolve) => {
+          let finished = false;
+          const done = () => {
+            if (finished) return;
+            finished = true;
+            window.speechSynthesis.removeEventListener?.("voiceschanged", done);
+            resolve();
+          };
+          window.speechSynthesis.addEventListener?.("voiceschanged", done, { once: true });
+          window.setTimeout(done, 700);
+        });
+        voices = window.speechSynthesis.getVoices() || [];
+      }
       const base = lang.toLowerCase().split("-")[0];
       const matching = voices.filter((voice) => (voice.lang || "").toLowerCase().startsWith(base));
-      const selected = matching.find((voice) => /(male|david|mark|guy|alex|daniel|ravi|george|james|tom|aaron|arthur|fred)/i.test(voice.name))
+      const maleVoice = /(male|david|mark|guy|alex|daniel|ravi|hemant|mohan|prabhat|george|james|tom|aaron|arthur|fred)/i;
+      const selected = matching.find((voice) => maleVoice.test(voice.name))
+        || matching.find((voice) => voice.localService)
         || matching[0]
+        || voices.find((voice) => maleVoice.test(voice.name))
         || voices[0];
+      const utterance = new SpeechSynthesisUtterance(spokenText);
+      utterance.lang = lang;
+      utterance.rate = 0.88;
+      utterance.pitch = 0.58;
+      utterance.volume = 1;
       if (selected) utterance.voice = selected;
-      window.speechSynthesis.speak(utterance);
+      setSpeaking(true);
+      await new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          setSpeaking(false);
+          resolve();
+        };
+        utterance.onstart = () => setSpeaking(true);
+        utterance.onboundary = () => setSpeechBeat((value) => value + 1);
+        utterance.onend = finish;
+        utterance.onerror = finish;
+        window.speechSynthesis.speak(utterance);
+      });
     } catch (error) {
       setSpeaking(false);
       setError(error?.message || "ULTRON could not speak this reply.");
     }
   };
-
   const localFetch = async (path, options = {}) => {
     if (!pairedToken) throw new Error("Connect the ULTRON PC Companion first.");
     return fetch(agentUrl.replace(/\/$/, "") + path, {
@@ -365,131 +383,77 @@ export default function App() {
     }
   };
 
+  const executeLocalCommand = async (action) => {
+    if (!pairedToken) throw new Error("Allow the ULTRON PC connection first.");
+    const response = await localFetch("/api/action/execute", { method: "POST", body: JSON.stringify({ action: action.name, args: action.args || {} }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.detail || "ULTRON could not complete that PC action.");
+    if (result.system) setSystem(result.system);
+    const completion = chooseAcknowledgement(ackRef.current);
+    ackRef.current = completion;
+    const reply = completion + (result.reply ? " " + result.reply : "");
+    add("assistant", reply); await speak(reply); setStatus("READY"); checkAgent();
+  };
+
   const sendCommand = async (message) => {
     const text = (message || "").trim();
     if (!text || busy) return;
-    setInput("");
-    setTranscript("");
-    add("user", text);
-
-    // A clearly spoken, direct app-launch request is a narrow Android-only action.
-    // No model-generated action or background automation is allowed through this path.
+    setInput(""); setTranscript(""); add("user", text);
     const androidApp = IS_NATIVE_ANDROID ? matchAndroidAppCommand(text) : null;
     if (androidApp) {
-      setBusy(true);
-      setStatus("OPENING APP");
+      setBusy(true); setStatus("OPENING APP");
       try {
         await openAndroidApp(androidApp.packageName);
-        const openedReply = lang.startsWith("hi")
-          ? androidApp.name + " खोल दिया है।"
-          : androidApp.name + " is open.";
-        add("assistant", openedReply);
-        await speak(openedReply);
-        setStatus("READY");
+        const completion = chooseAcknowledgement(ackRef.current); ackRef.current = completion;
+        const openedReply = completion + (lang.startsWith("hi") ? " " + androidApp.name + " खोल दिया है।" : " " + androidApp.name + " is open.");
+        add("assistant", openedReply); await speak(openedReply); setStatus("READY");
       } catch (e) {
         const detail = e.message || "Could not open " + androidApp.name + ".";
-        add("system", detail);
-        speak(lang.startsWith("hi") ? androidApp.name + " नहीं खुल पाया। " + detail : detail);
+        add("system", detail); await speak(lang.startsWith("hi") ? androidApp.name + " नहीं खुल पाया। " + detail : detail);
         setStatus("APP OPEN FAILED");
-      } finally {
-        setBusy(false);
-      }
+      } finally { setBusy(false); }
       return;
     }
-
-    setBusy(true);
-    setStatus("THINKING");
+    setBusy(true); setStatus("THINKING");
     try {
       let data;
       if (pairedToken) {
-        const localResponse = await localFetch("/api/command", {
-          method: "POST",
-          body: JSON.stringify({ message: text, language: lang })
-        });
+        const localResponse = await localFetch("/api/command", { method: "POST", body: JSON.stringify({ message: text, language: lang }) });
         const localData = await localResponse.json();
         if (!localResponse.ok) throw new Error(localData.detail || "Local companion request failed");
-        if (localData.proposed_action) {
-          setPending(localData.proposed_action);
-          add("system", "Approval required: " + localData.proposed_action.description);
-          const approvalVoice = lang.startsWith("hi")
-            ? "मैंने आपका PC command समझ लिया है। आगे बढ़ने के लिए स्क्रीन पर Approve दबाएँ।"
-            : "I understood your PC command. Please press Approve on screen before I run it.";
-          add("assistant", approvalVoice);
-          speak(approvalVoice);
-          setStatus("AWAITING APPROVAL");
-          return;
-        }
+        if (localData.proposed_action) { await executeLocalCommand(localData.proposed_action); return; }
         if (localData.needs_ai) {
           if (!CLOUD_API) throw new Error("Cloud AI API is not configured.");
           const plannerResponse = await fetch(CLOUD_API + "/api/plan", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              message: text,
-              language: lang,
-              history: messages.slice(-8).map((m) => ({
-                role: m.role === "assistant" ? "assistant" : "user",
-                content: m.text
-              }))
-            })
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: text, language: lang, history: messages.slice(-8).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })) })
           });
           data = await plannerResponse.json();
           if (!plannerResponse.ok) throw new Error(data.detail || "ULTRON could not interpret the command.");
-          if (data.kind === "action" && data.proposed_action) {
-            setPending(data.proposed_action);
-            add("system", "Approval required: " + data.proposed_action.description);
-            const approvalVoice = lang.startsWith("hi")
-              ? "मैंने आपका PC command समझ लिया है। आगे बढ़ने के लिए स्क्रीन पर Approve दबाएँ।"
-              : "I understood your PC command. Please press Approve on screen before I run it.";
-            add("assistant", approvalVoice);
-            speak(approvalVoice);
-            setStatus("AWAITING APPROVAL");
-            return;
-          }
-        } else {
-          data = localData;
-        }
+          if (data.kind === "action" && data.proposed_action) { await executeLocalCommand(data.proposed_action); return; }
+        } else { data = localData; }
       } else {
         if (!CLOUD_API) throw new Error("Cloud AI API is not configured.");
         const plannerResponse = await fetch(CLOUD_API + "/api/plan", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            message: text,
-            language: lang,
-            history: messages.slice(-8).map((m) => ({
-              role: m.role === "assistant" ? "assistant" : "user",
-              content: m.text
-            }))
-          })
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: text, language: lang, history: messages.slice(-8).map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text })) })
         });
         data = await plannerResponse.json();
         if (!plannerResponse.ok) throw new Error(data.detail || "Cloud AI request failed");
         if (data.kind === "action" && data.proposed_action) {
           const note = "I understood the PC command, sir. Start and pair the ULTRON PC Companion to run it on this computer.";
-          add("assistant", note);
-          speak(note);
-          setStatus("PC COMPANION REQUIRED");
-          return;
+          add("assistant", note); await speak(note); setStatus("PC COMPANION REQUIRED"); return;
         }
       }
       const reply = data.reply || "I am ready, sir.";
-      add("assistant", reply);
-      speak(reply);
-      setStatus("READY");
+      add("assistant", reply); await speak(reply); setStatus("READY");
     } catch (e) {
       const detail = e.message || "Request failed.";
       add("system", detail);
-      const voiceError = lang.startsWith("hi")
-        ? "माफ़ कीजिए, आपका command पूरा नहीं हो पाया। " + detail
-        : "Sorry, I couldn't complete that command. " + detail;
-      speak(voiceError);
-      setStatus("REQUEST FAILED");
-    } finally {
-      setBusy(false);
-    }
+      const voiceError = lang.startsWith("hi") ? "माफ़ कीजिए, आपका command पूरा नहीं हो पाया। " + detail : "Sorry, I could not complete that command. " + detail;
+      await speak(voiceError); setStatus("REQUEST FAILED");
+    } finally { setBusy(false); }
   };
-
   const approveAction = async () => {
     if (!pending || !pairedToken) return;
     setBusy(true);
@@ -536,16 +500,14 @@ export default function App() {
     if (wake) {
       const remaining = phrase.slice(wake.index + wake[0].length).replace(/^[\s,!.:-]+/, "").trim();
       if (remaining) {
-        listeningRef.current = false;
-        setListening(false);
+        if (!IS_NATIVE_DESKTOP) {
+          listeningRef.current = false;
+          setListening(false);
+          if (IS_NATIVE_ANDROID) { stopAndroidRecognition(); await new Promise((resolve) => window.setTimeout(resolve, 300)); }
+          else { try { rec.current?.stop(); } catch {} }
+        }
         setArmState(false);
         setStatus("THINKING");
-        if (IS_NATIVE_ANDROID) {
-          stopAndroidRecognition();
-          await new Promise((resolve) => window.setTimeout(resolve, 300));
-        } else {
-          try { rec.current?.stop(); } catch {}
-        }
         await sendCommand(remaining);
       } else {
         setArmState(true);
@@ -566,16 +528,14 @@ export default function App() {
     // The microphone button is an explicit tap-to-talk action. A wake phrase is
     // optional: a direct command is processed immediately while listening.
     if (armedRef.current || listeningRef.current) {
-      listeningRef.current = false;
-      setListening(false);
+      if (!IS_NATIVE_DESKTOP) {
+        listeningRef.current = false;
+        setListening(false);
+        if (IS_NATIVE_ANDROID) { stopAndroidRecognition(); await new Promise((resolve) => window.setTimeout(resolve, 300)); }
+        else { try { rec.current?.stop(); } catch {} }
+      }
       setArmState(false);
       setStatus("THINKING");
-      if (IS_NATIVE_ANDROID) {
-        stopAndroidRecognition();
-        await new Promise((resolve) => window.setTimeout(resolve, 300));
-      } else {
-        try { rec.current?.stop(); } catch {}
-      }
       await sendCommand(phrase);
     }
   };
@@ -650,6 +610,22 @@ export default function App() {
     const interval = window.setInterval(checkAgent, 15000);
     return () => window.clearInterval(interval);
   }, [agentUrl, pairedToken]);
+
+  useEffect(() => {
+    if (!IS_NATIVE_DESKTOP || agent !== "paired" || !pairedToken) return undefined;
+    let active = true;
+    const refreshSystemMonitor = async () => {
+      try {
+        const response = await localFetch("/api/action/execute", { method: "POST", body: JSON.stringify({ action: "get_system_info", args: {} }) });
+        const result = await response.json();
+        if (active && response.ok && result.system) setSystem(result.system);
+      } catch { /* Keep the last successful metrics visible during a short local interruption. */ }
+    };
+    refreshSystemMonitor();
+    const interval = window.setInterval(refreshSystemMonitor, 5000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, [agent, pairedToken, agentUrl]);
+
 
   useEffect(() => {
     const resetOnClose = () => {
@@ -741,16 +717,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (IS_NATIVE_ANDROID) {
-      rec.current = null;
-      return undefined;
-    }
+    if (IS_NATIVE_ANDROID || IS_NATIVE_DESKTOP) { rec.current = null; return undefined; }
     const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!Recognition) return;
+    if (!Recognition) return undefined;
     const recognition = new Recognition();
+    let recognitionActive = false;
+    let retryCount = 0;
     recognition.continuous = true;
     recognition.interimResults = true;
     recognition.lang = lang;
+    recognition.onstart = () => { recognitionActive = true; retryCount = 0; };
     recognition.onresult = (event) => {
       let interim = "";
       let finalText = "";
@@ -760,28 +736,29 @@ export default function App() {
         else interim += value;
       }
       if (interim) setTranscript(interim);
-      if (finalText.trim()) {
-        setTranscript(finalText.trim());
-        if (speechHandlerRef.current) speechHandlerRef.current(finalText.trim());
-      }
+      if (finalText.trim()) { setTranscript(finalText.trim()); speechHandlerRef.current?.(finalText.trim()); }
     };
     recognition.onerror = (event) => {
       if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-        listeningRef.current = false;
-        setListening(false);
-        setArmState(false);
-        setError("Microphone permission was denied. Allow microphone access in browser settings.");
+        listeningRef.current = false; setListening(false); setArmState(false);
+        setError("Microphone access was denied. Allow microphone access in Windows and ULTRON Permissions.");
+      } else if (event.error === "network") {
+        retryCount += 1;
+        setError("Speech service network interrupted. Reconnecting automatically…");
+      } else if (event.error === "audio-capture") {
+        setError("Microphone is busy or unavailable. Check the microphone selected in Windows.");
       } else if (event.error !== "no-speech" && event.error !== "aborted") {
         setError("Speech recognition: " + event.error);
       }
     };
     recognition.onend = () => {
+      recognitionActive = false;
       if (listeningRef.current) {
+        if (restartTimer.current) window.clearTimeout(restartTimer.current);
+        const delay = Math.min(650 * Math.pow(1.7, Math.min(retryCount, 5)), 7000);
         restartTimer.current = window.setTimeout(() => {
-          if (listeningRef.current) {
-            try { recognition.start(); } catch {}
-          }
-        }, 450);
+          if (listeningRef.current && !recognitionActive) { try { recognition.start(); } catch { retryCount += 1; } }
+        }, delay);
       }
     };
     rec.current = recognition;
@@ -793,7 +770,6 @@ export default function App() {
       rec.current = null;
     };
   }, [lang]);
-
   const grantMic = async () => {
     try {
       if (IS_NATIVE_ANDROID) {
@@ -895,6 +871,107 @@ export default function App() {
     }
   };
 
+  const startDesktopWhisperRecognition = async () => {
+    if (whisperRecognitionRunning.current) return;
+    if (!CLOUD_API) { setError("ULTRON voice transcription service is not configured."); listeningRef.current = false; setListening(false); return; }
+    whisperRecognitionRunning.current = true;
+    let stream = null;
+    let audioContext = null;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      desktopMediaStreamRef.current = stream;
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) throw new Error("This Windows audio engine does not support microphone capture.");
+      audioContext = new AudioContextClass();
+      desktopAudioContextRef.current = audioContext;
+      if (audioContext.state === "suspended") await audioContext.resume();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 1024;
+      source.connect(analyser);
+      const samples = new Uint8Array(analyser.fftSize);
+      setError("");
+      setStatus("LISTENING · ULTRON WHISPER");
+
+      while (listeningRef.current) {
+        const mime = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "";
+        let recorder;
+        try { recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream); }
+        catch { recorder = new MediaRecorder(stream); }
+        desktopMediaRecorderRef.current = recorder;
+        const chunks = [];
+        const preRoll = [];
+        let heardSpeech = false;
+        let lastVoiceAt = 0;
+        let speechStartedAt = 0;
+        let frameId = 0;
+        const captureStartedAt = Date.now();
+        const stopped = new Promise((resolve, reject) => {
+          recorder.ondataavailable = (event) => {
+            if (!event.data || !event.data.size) return;
+            if (heardSpeech) chunks.push(event.data);
+            else { preRoll.push(event.data); if (preRoll.length > 2) preRoll.shift(); }
+          };
+          recorder.onerror = () => reject(new Error("ULTRON could not record microphone audio. Check your microphone connection."));
+          recorder.onstop = () => resolve();
+          recorder.start(250);
+          const monitor = () => {
+            if (!listeningRef.current) { if (recorder.state !== "inactive") recorder.stop(); return; }
+            analyser.getByteTimeDomainData(samples);
+            let sum = 0;
+            for (let i = 0; i < samples.length; i += 1) { const v = (samples[i] - 128) / 128; sum += v * v; }
+            const rms = Math.sqrt(sum / samples.length);
+            const now = Date.now();
+            if (rms >= 0.010) {
+              if (!heardSpeech) { heardSpeech = true; speechStartedAt = now; chunks.push(...preRoll); preRoll.length = 0; }
+              lastVoiceAt = now;
+            }
+            if ((heardSpeech && (now - lastVoiceAt >= 1050 || now - speechStartedAt >= 14000)) || (!heardSpeech && now - captureStartedAt >= 12000)) {
+              if (recorder.state !== "inactive") recorder.stop();
+              return;
+            }
+            frameId = window.requestAnimationFrame(monitor);
+          };
+          frameId = window.requestAnimationFrame(monitor);
+        });
+        try { await stopped; } finally { if (frameId) window.cancelAnimationFrame(frameId); desktopMediaRecorderRef.current = null; }
+        if (!listeningRef.current) break;
+        if (!heardSpeech || !chunks.length) continue;
+        const clip = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+        if (clip.size < 1200) continue;
+        try {
+          setStatus("TRANSCRIBING VOICE");
+          const form = new FormData();
+          form.append("file", clip, "ultron-command.webm");
+          form.append("language", "auto");
+          const response = await fetch(CLOUD_API + "/api/transcribe", { method: "POST", body: form });
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.detail || "ULTRON could not transcribe that command.");
+          const phrase = String(result.text || "").trim();
+          if (phrase && listeningRef.current) { setTranscript(phrase); setError(""); await speechHandlerRef.current?.(phrase); }
+        } catch (transcriptionError) {
+          setError(transcriptionError?.message || "Voice transcription interrupted. ULTRON will keep listening.");
+          await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        }
+        if (listeningRef.current) setStatus("LISTENING · ULTRON WHISPER");
+      }
+    } catch (e) {
+      if (listeningRef.current) {
+        setStatus("VOICE INPUT RETRY");
+        setError(e?.message || "ULTRON could not process microphone audio. Check your internet connection.");
+        await new Promise((resolve) => window.setTimeout(resolve, 1800));
+      }
+    } finally {
+      if (desktopMediaRecorderRef.current && desktopMediaRecorderRef.current.state !== "inactive") { try { desktopMediaRecorderRef.current.stop(); } catch {} }
+      if (stream) stream.getTracks().forEach((track) => track.stop());
+      desktopMediaStreamRef.current = null;
+      if (audioContext && audioContext.state !== "closed") { try { await audioContext.close(); } catch {} }
+      desktopAudioContextRef.current = null;
+      desktopMediaRecorderRef.current = null;
+      whisperRecognitionRunning.current = false;
+      if (listeningRef.current) setStatus("LISTENING FOR COMMAND");
+    }
+  };
   const toggleMic = async () => {
     if (!permissions.microphone) {
       setError("First allow microphone permission in Permissions.");
@@ -908,6 +985,9 @@ export default function App() {
       setStatus("STANDBY");
       if (IS_NATIVE_ANDROID) {
         stopAndroidRecognition();
+      } else if (IS_NATIVE_DESKTOP) {
+        if (desktopMediaRecorderRef.current && desktopMediaRecorderRef.current.state !== "inactive") { try { desktopMediaRecorderRef.current.stop(); } catch {} }
+        if (desktopMediaStreamRef.current) desktopMediaStreamRef.current.getTracks().forEach((track) => track.stop());
       } else {
         try { rec.current?.stop(); } catch {}
       }
@@ -920,6 +1000,10 @@ export default function App() {
     setStatus("LISTENING FOR COMMAND");
     if (IS_NATIVE_ANDROID) {
       startAndroidRecognition();
+      return;
+    }
+    if (IS_NATIVE_DESKTOP) {
+      startDesktopWhisperRecognition();
       return;
     }
     if (!rec.current) {
@@ -1198,16 +1282,6 @@ export default function App() {
               ))}
               <div ref={logEnd} />
             </div>
-            {pending && (
-              <div className="actionApproval">
-                <b>APPROVAL REQUIRED</b>
-                <span>{pending.description}</span>
-                <div>
-                  <button disabled={busy || !automationEnabled} onClick={approveAction}>ALLOW</button>
-                  <button className="deny" onClick={denyAction}>DENY</button>
-                </div>
-              </div>
-            )}
             <form className="chatComposer" onSubmit={(event) => { event.preventDefault(); sendCommand(input); }}>
               <input value={input} onChange={(event) => setInput(event.target.value)} placeholder="Ask ULTRON anything..." />
               <button disabled={!input.trim() || busy} aria-label="Send message"><Send /></button>
@@ -1221,21 +1295,22 @@ export default function App() {
               <div className="monitorTrace cpuTrace" />
             </div>
             <div className="monitorStat">
-              <div><span>RAM USAGE</span><b>{system ? system.memory_percent + "%" : "—"}</b></div>
+              <div><span>RAM USAGE</span><b>{system ? system.memory_percent + "%" : "—"}</b><small>{system ? (system.memory_used_gb || 0) + " / " + (system.memory_total_gb || 0) + " GB used" : "Waiting for PC metrics"}</small></div>
               <div className="monitorTrace ramTrace" />
             </div>
             <div className="monitorStat">
-              <div><span>DISK USAGE</span><b>{system ? system.disk_percent + "%" : "—"}</b></div>
+              <div><span>ROM / STORAGE USAGE</span><b>{system ? system.disk_percent + "%" : "—"}</b><small>{system ? (system.disk_used_gb || 0) + " / " + (system.disk_total_gb || 0) + " GB used" : "Waiting for PC metrics"}</small></div>
               <div className="monitorTrace diskTrace" />
             </div>
             <div className="monitorStat">
-              <div><span>NETWORK SENT</span><b>{system ? (system.network_sent_mb || 0) + " MB" : "—"}</b></div>
+              <div><span>NETWORK SENT / RECEIVED</span><b>{system ? (system.network_sent_mb || 0) + " / " + (system.network_recv_mb || 0) + " MB" : "—"}</b><small>{system ? "Since Windows network counters started" : "Network counters unavailable"}</small></div>
               <div className="monitorTrace netTrace" />
             </div>
             <div className="monitorProcesses">
-              <span>PROCESSES / STATUS</span>
-              <p>{system ? system.platform : "PC companion " + (agent === "paired" ? "connected" : "not connected")}</p>
-              <p>Voice engine · {listening ? "active" : "idle"}</p>
+              <span>LIVE PROCESSES / STATUS</span>
+              <p>{system ? system.platform + " · " + (system.process_count || 0) + " processes · Uptime " + Math.round((system.uptime_seconds || 0) / 3600) + "h" : "PC companion " + (agent === "paired" ? "connected · loading metrics" : "not connected")}</p>
+              <p>Voice engine · {listening ? (IS_NATIVE_DESKTOP ? "ULTRON Whisper · active" : "active") : "idle"}</p>
+              {system?.top_processes?.length ? system.top_processes.slice(0, 5).map((process) => <p key={process.pid}>{process.name} · {process.memory_mb} MB</p>) : <p>Process details will appear when the PC monitor connects.</p>}
               <p>Renderer · Canvas 2D / {visualQuality.toUpperCase()}</p>
             </div>
           </section>
@@ -1245,7 +1320,7 @@ export default function App() {
       </section>
       <footer className="ultronFooter">
         <span>ULTRON · PERSONAL INTELLIGENCE SYSTEM</span>
-        <span>LOCAL MACHINE CONTROL · USER APPROVAL REQUIRED</span>
+        <span>LOCAL MACHINE CONTROL · PC ACCESS CONSENTED</span>
       </footer>
 
       {showPerms && (
@@ -1253,7 +1328,7 @@ export default function App() {
           <section className="modal panel" onClick={(event) => event.stopPropagation()}>
             <h3>PERMISSION CENTER <button onClick={() => setShowPerms(false)}><X /></button></h3>
             <p className="modalLead">{IS_NATIVE_ANDROID ? "ULTRON needs microphone permission for voice commands. You can deny it and still use text chat." : IS_NATIVE_DESKTOP ? "ULTRON asks separately for PC connection and microphone permission. Denying either keeps that feature off." : "Grant only the browser permissions you choose. PC access is available in the native Windows app."}</p>
-            <div className="permission"><Mic /><div><b>Microphone</b><small>Wake-word detection and voice commands while this app is open</small></div><button onClick={grantMic}>{permissions.microphone ? "GRANTED" : "ALLOW"}</button></div>
+            <div className="permission"><Mic /><div><b>Microphone</b><small>Voice commands while listening is active. Windows voice clips are sent to ULTRON Whisper for transcription.</small></div><button onClick={grantMic}>{permissions.microphone ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><MapPin /><div><b>Location</b><small>Only used when you request a location feature</small></div><button onClick={grantLocation}>{permissions.location ? "GRANTED" : "ALLOW"}</button></div>
             <div className="permission"><Bell /><div><b>Notifications</b><small>Optional ULTRON alerts</small></div><button onClick={grantNotifications}>{permissions.notifications ? "GRANTED" : "ALLOW"}</button></div>
             {!IS_MOBILE_DEVICE && !IS_NATIVE_DESKTOP && <div className="permission"><Monitor /><div><b>Windows desktop app</b><small>Dedicated app with local PC Allow/Deny connection</small></div><a href={WINDOWS_DOWNLOAD}>DOWNLOAD</a></div>}

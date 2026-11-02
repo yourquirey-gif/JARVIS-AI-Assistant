@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - "backend/**"
+      - "cloud-api/**"
       - "desktop/**"
       - "src/**"
       - "scripts/**"
@@ -83,7 +84,7 @@ jobs:
             New-Item -ItemType Directory -Force -Path "public/downloads","public/app-updates" | Out-Null
             Copy-Item $artifactCopy "public/downloads/ULTRON-Windows-Setup.exe" -Force
             if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
-            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const file='public/app-updates/windows.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); manifest.version=pkg.version; manifest.releaseNotes='Windows 1.0.9: automatically selects a free local PC-service port when the legacy port is occupied. Installer supports Authenticode signing when signing secrets are configured.'; fs.writeFileSync(file,JSON.stringify(manifest,null,2)+String.fromCharCode(10),'utf8');"
+            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const file='public/app-updates/windows.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); manifest.version=pkg.version; manifest.releaseNotes='Windows 1.1.0: Whisper voice input, continuous listening, one-time PC access for allowlisted commands, deeper voice output, and live CPU/RAM/disk/network/process monitoring.'; fs.writeFileSync(file,JSON.stringify(manifest,null,2)+String.fromCharCode(10),'utf8');"
             if ($LASTEXITCODE -ne 0) { throw "Could not update the Windows release manifest." }
             git add -A public/downloads/ public/app-updates/windows.json
             git diff --cached --quiet
