@@ -125,6 +125,14 @@ function createPcService(options) {
     if (typeMatch) {
       return { name: "type_text", args: { text: typeMatch[1] }, description: "Type the requested text into the active app" };
     }
+    const deleteMatch = rawValue.match(/^(?:please\s+)?(?:delete|remove|trash|erase)\s+(?:the\s+)?(?:file\s+)?(.+?)\s+(?:from|in)\s+(desktop|documents|downloads|pictures|music|videos)\s*$/i);
+    if (deleteMatch) {
+      const name = deleteMatch[1].trim().replace(/^["']|["']$/g, "");
+      const folder = deleteMatch[2].toLowerCase();
+      if (name && !/[\\/]/.test(name)) {
+        return { name: "delete_item", args: { folder, name }, description: "Move " + name + " from " + folder + " to the Recycle Bin after confirmation" };
+      }
+    }
     const sites = {
       youtube: ["youtube", "यूट्यूब"],
       google: ["google", "गूगल"],
@@ -270,13 +278,20 @@ function createPcService(options) {
     if (format !== 1 || bitsPerSample !== 16 || dataOffset < 0) {
       throw error(500, "Windows speech audio format is not supported for voice amplification.");
     }
-    const gain = 4.0;
-    const limiter = Math.tanh(gain);
+    let peak = 0;
     const end = dataOffset + dataLength;
     for (let index = dataOffset; index + 1 < end; index += 2) {
+      const sample = Math.abs(wav.readInt16LE(index) / 32768);
+      if (sample > peak) peak = sample;
+    }
+    if (peak < 0.00001) throw error(500, "Windows speech engine produced silent audio.");
+    const targetPeak = 0.96;
+    const gain = targetPeak / peak;
+    const limiter = Math.tanh(targetPeak);
+    for (let index = dataOffset; index + 1 < end; index += 2) {
       const sample = wav.readInt16LE(index) / 32768;
-      const amplified = Math.tanh(sample * gain) / limiter;
-      const clipped = Math.max(-1, Math.min(1, amplified));
+      const normalized = Math.tanh(sample * gain) / limiter * targetPeak;
+      const clipped = Math.max(-0.98, Math.min(0.98, normalized));
       wav.writeInt16LE(Math.max(-32768, Math.min(32767, Math.round(clipped * 32767))), index);
     }
     return wav;
@@ -304,7 +319,8 @@ function createPcService(options) {
       "    $prefix = $language.Substring(0, 2)",
       "    $selected = @($voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -ieq $prefix })",
       "  }",
-      "  if ($selected.Count -eq 0) { throw \"No installed Windows speech voice is available for $language.\" }",
+      "  if ($selected.Count -eq 0 -and $language.StartsWith('en')) { $selected = @($voices | Where-Object { $_.VoiceInfo.Culture.TwoLetterISOLanguageName -eq 'en' }) }",
+      "  if ($selected.Count -eq 0) { throw \"No installed Windows speech voice is available for $language. Install the matching Windows voice in Speech settings.\" }",
       "  $synth.SelectVoice($selected[0].VoiceInfo.Name)",
       "  $synth.Volume = 100",
       "  $synth.Rate = 0",
@@ -543,10 +559,90 @@ if ($remaining.Count -gt 0) { throw 'The app window is still open. It may have u
     const text = String(value || "");
     if (!text.trim() || text.length > 1000) throw error(422, "Dictation text must contain 1 to 1000 characters.");
     const encodedText = Buffer.from(text, "utf8").toString("base64");
-    const script = "$ErrorActionPreference = 'Stop'\n$code = @'\nusing System;\nusing System.ComponentModel;\nusing System.Runtime.InteropServices;\npublic static class UltronUnicodeInput {\n  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }\n  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }\n  [StructLayout(LayoutKind.Sequential)] public struct HARDWAREINPUT { public uint uMsg; public ushort wParamL; public ushort wParamH; }\n  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public HARDWAREINPUT hi; }\n  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION U; }\n  [DllImport(\"user32.dll\", SetLastError=true)] static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);\n  public static int Type(string text) {\n    int count = 0;\n    foreach (char ch in text) {\n      INPUT[] events = new INPUT[2];\n      events[0].type = 1;\n      events[0].U.ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = 0x0004, time = 0, dwExtraInfo = IntPtr.Zero };\n      events[1].type = 1;\n      events[1].U.ki = new KEYBDINPUT { wVk = 0, wScan = ch, dwFlags = 0x0004 | 0x0002, time = 0, dwExtraInfo = IntPtr.Zero };\n      uint sent = SendInput(2, events, Marshal.SizeOf(typeof(INPUT)));\n      if (sent != 2) throw new Win32Exception(Marshal.GetLastWin32Error(), \"Windows could not send text to the focused app.\");\n      count++;\n    }\n    return count;\n  }\n}\n'@\nAdd-Type -TypeDefinition $code -Language CSharp\n$text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('__BASE64__'))\n$count = [UltronUnicodeInput]::Type($text)\n[Console]::WriteLine(('TYPED:' + $count))".replace("__BASE64__", encodedText);
-    runPowerShell(script, 15000);
-    return "Typed the dictated text into the currently focused app or website.";
+    const script = [
+      "$ErrorActionPreference = 'Stop'",
+      "$code = @'",
+      "using System;",
+      "using System.ComponentModel;",
+      "using System.Runtime.InteropServices;",
+      "using System.Collections.Generic;",
+      "public static class UltronUnicodeInput {",
+      "  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }",
+      "  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }",
+      "  [StructLayout(LayoutKind.Sequential)] public struct HARDWAREINPUT { public uint uMsg; public ushort wParamL; public ushort wParamH; }",
+      "  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; [FieldOffset(0)] public HARDWAREINPUT hi; }",
+      "  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION U; }",
+      "  [DllImport(\"user32.dll\", SetLastError=true)] static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);",
+      "  static void AddKey(List<INPUT> events, ushort key, uint flags) {",
+      "    INPUT down = new INPUT(); down.type = 1; down.U.ki = new KEYBDINPUT { wVk = key, wScan = 0, dwFlags = flags, time = 0, dwExtraInfo = IntPtr.Zero }; events.Add(down);",
+      "    INPUT up = new INPUT(); up.type = 1; up.U.ki = new KEYBDINPUT { wVk = key, wScan = 0, dwFlags = flags | 0x0002, time = 0, dwExtraInfo = IntPtr.Zero }; events.Add(up);",
+      "  }",
+      "  static void AddUnicode(List<INPUT> events, ushort unit) {",
+      "    INPUT down = new INPUT(); down.type = 1; down.U.ki = new KEYBDINPUT { wVk = 0, wScan = unit, dwFlags = 0x0004, time = 0, dwExtraInfo = IntPtr.Zero }; events.Add(down);",
+      "    INPUT up = new INPUT(); up.type = 1; up.U.ki = new KEYBDINPUT { wVk = 0, wScan = unit, dwFlags = 0x0004 | 0x0002, time = 0, dwExtraInfo = IntPtr.Zero }; events.Add(up);",
+      "  }",
+      "  public static int Type(string text) {",
+      "    var events = new List<INPUT>();",
+      "    foreach (char ch in text) {",
+      "      if (ch == '\\r') continue;",
+      "      if (ch == '\\n') AddKey(events, 0x0D, 0);",
+      "      else if (ch == '\\t') AddKey(events, 0x09, 0);",
+      "      else AddUnicode(events, ch);",
+      "    }",
+      "    if (events.Count == 0) throw new ArgumentException(\"No text characters were available to type.\");",
+      "    int sentTotal = 0;",
+      "    for (int offset = 0; offset < events.Count; offset += 256) {",
+      "      int count = Math.Min(256, events.Count - offset);",
+      "      INPUT[] batch = events.GetRange(offset, count).ToArray();",
+      "      uint sent = SendInput((uint)batch.Length, batch, Marshal.SizeOf(typeof(INPUT)));",
+      "      sentTotal += (int)sent;",
+      "      if (sent != batch.Length) {",
+      "        int code = Marshal.GetLastWin32Error();",
+      "        if (code == 5) throw new Win32Exception(code, \"Windows blocked typing into the focused app. Make sure the target app is not running as Administrator and is in the foreground.\");",
+      "        throw new Win32Exception(code, \"Windows accepted only \" + sentTotal + \" of \" + events.Count + \" keyboard events. Click the target text field and try again.\");",
+      "      }",
+      "    }",
+      "    return text.Length;",
+      "  }",
+      "}",
+      "'@",
+      "Add-Type -TypeDefinition $code -Language CSharp",
+      "$text = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('" + encodedText + "'))",
+      "$count = [UltronUnicodeInput]::Type($text)",
+      "[Console]::WriteLine(('TYPED:' + $count))"
+    ].join("\n");
+    runPowerShell(script, 20000);
+    return "Typed the requested text into the currently focused app or website.";
   }
+
+  async function deleteUserFile(folder, name) {
+    if (process.platform !== "win32") throw error(400, "File deletion is available in the Windows desktop app.");
+    const key = String(folder || "").trim().toLowerCase();
+    const directoryKey = FOLDER_PATHS[key];
+    const filename = String(name || "").trim();
+    if (!directoryKey) throw error(422, "Choose Desktop, Documents, Downloads, Pictures, Music, or Videos.");
+    if (!filename || filename.length > 180 || filename === "." || filename === ".." ||
+        path.basename(filename) !== filename || /[\\/<>:"|?*\u0000-\u001f]/.test(filename)) {
+      throw error(422, "Provide one exact file name without a folder path.");
+    }
+    const root = path.resolve(app.getPath(directoryKey));
+    const target = path.resolve(root, filename);
+    if (path.dirname(target).toLowerCase() !== root.toLowerCase()) {
+      throw error(403, "The requested item is outside the selected user folder.");
+    }
+    let stat;
+    try { stat = await fs.promises.lstat(target); }
+    catch (err) {
+      if (err && err.code === "ENOENT") throw error(404, "I could not find " + filename + " in " + key + ".");
+      throw err;
+    }
+    if (stat.isSymbolicLink() || !stat.isFile()) {
+      throw error(403, "For safety, ULTRON can move one regular file to the Recycle Bin, not a folder or link.");
+    }
+    await shell.trashItem(target);
+    return "Moved " + filename + " from " + key + " to the Windows Recycle Bin. You can restore it from there.";
+  }
+
   async function openFolder(name) {
     const key = String(name || "").trim().toLowerCase();
     const known = FOLDER_PATHS[key];
@@ -587,6 +683,8 @@ if ($remaining.Count -gt 0) { throw 'The app window is still open. It may have u
         return { reply: closeApp(args.name) };
       case "type_text":
         return { reply: typeText(args.text) };
+      case "delete_item":
+        return { reply: await deleteUserFile(args.folder, args.name) };
       case "open_folder":
         return { reply: await openFolder(args.name) };
       case "list_desktop_folders": {
