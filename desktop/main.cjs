@@ -3,6 +3,8 @@ const path = require("path");
 const { spawn } = require("child_process");
 const crypto = require("crypto");
 const http = require("http");
+const net = require("net");
+const os = require("os");
 
 const DEFAULT_SITE = "https://jarvis-ai-assistant-zeta-six.vercel.app";
 const SITE_URL = process.env.ULTRON_SITE_URL || DEFAULT_SITE;
@@ -10,6 +12,8 @@ const PORT = 8765;
 
 let mainWindow = null;
 let pcService = null;
+let pcServiceStartPromise = null;
+let pcServiceError = "";
 let pcAllowed = false;
 let micAllowed = false;
 let quitting = false;
@@ -31,17 +35,32 @@ function serviceExecutable() {
   return path.join(process.resourcesPath, "ULTRON-PC-Service.exe");
 }
 
-function checkLocalService() {
+function inspectLocalService() {
   return new Promise((resolve) => {
     const request = http.get("http://127.0.0.1:" + PORT + "/api/health", (response) => {
-      response.resume();
-      resolve(response.statusCode === 200);
+      let body = "";
+      response.on("data", (chunk) => { if (body.length < 4096) body += chunk.toString(); });
+      response.on("end", () => {
+        let payload = null;
+        try { payload = JSON.parse(body); } catch (_) {}
+        resolve({ reachable: true, ok: response.statusCode === 200 && payload?.ok === true && payload?.service === "ULTRON Local PC Companion" });
+      });
     });
-    request.setTimeout(1200, () => {
-      request.destroy();
-      resolve(false);
-    });
-    request.on("error", () => resolve(false));
+    request.setTimeout(1200, () => { request.destroy(); resolve({ reachable: false, ok: false }); });
+    request.on("error", () => resolve({ reachable: false, ok: false }));
+  });
+}
+
+async function checkLocalService() {
+  return (await inspectLocalService()).ok;
+}
+
+function isLocalPortOccupied() {
+  return new Promise((resolve) => {
+    const socket = net.createConnection({ host: "127.0.0.1", port: PORT });
+    socket.once("connect", () => { socket.destroy(); resolve(true); });
+    socket.once("error", (error) => { socket.destroy(); resolve(error.code !== "ECONNREFUSED"); });
+    socket.setTimeout(900, () => { socket.destroy(); resolve(true); });
   });
 }
 
@@ -66,10 +85,37 @@ function stopPcService() {
   }
 }
 
+function serviceStartupHelp() {
+  const details = [
+    "Expected local endpoint: http://127.0.0.1:8765/api/health",
+    "Close any older ULTRON PC Companion instance and try again. If another application is using port 8765, close that application first. ULTRON will not terminate unrelated processes."
+  ];
+  if (process.platform === "win32" && os.release().startsWith("6.1.")) {
+    details.push("Windows 7 detected. The _socket DLL-load failure is commonly associated with missing Windows 7 SP1 security updates. Install the applicable KB2533623 update (or KB3126587 where required), restart Windows, and retry. ULTRON cannot add missing Windows system APIs itself.");
+  }
+  if (pcServiceError) details.push("Service startup details: " + pcServiceError);
+  return details.join("\n\n");
+}
+
 async function startPcService() {
+  if (pcServiceStartPromise) return pcServiceStartPromise;
+  pcServiceStartPromise = startPcServiceInternal();
+  try { return await pcServiceStartPromise; }
+  finally { pcServiceStartPromise = null; }
+}
+
+async function startPcServiceInternal() {
   if (pcService && !pcService.killed && await checkLocalService()) {
     pcAllowed = true;
     return true;
+  }
+  const existing = await inspectLocalService();
+  if (existing.reachable || await isLocalPortOccupied()) {
+    const detail = existing.ok
+      ? "Another ULTRON PC Companion is already responding on port 8765. Close the other companion before starting this one."
+      : "Port 8765 is already occupied by another local process. Close that program before starting ULTRON. The app will not stop an unrelated process.";
+    await dialog.showMessageBox(mainWindow, { type: "warning", title: "ULTRON PC service port is busy", message: "ULTRON cannot safely start a second local PC service.", detail, buttons: ["OK"] });
+    return false;
   }
 
   const executable = serviceExecutable();
@@ -82,11 +128,12 @@ async function startPcService() {
     return false;
   }
 
+  pcServiceError = "";
   const token = crypto.randomBytes(32).toString("hex");
   const trustedOrigin = safeSiteUrl().origin;
   const child = spawn(executable, [], {
     windowsHide: true,
-    stdio: "ignore",
+    stdio: ["ignore", "ignore", "pipe"],
     env: {
       ...process.env,
       ULTRON_TOKEN: token,
@@ -96,15 +143,22 @@ async function startPcService() {
     }
   });
   pcService = child;
+  child.stderr?.on("data", (chunk) => {
+    pcServiceError = (pcServiceError + chunk.toString()).slice(-3000);
+  });
 
   child.on("error", (error) => {
+    pcServiceError = error.message || "The Windows service process could not be launched.";
     pcAllowed = false;
     pcService = null;
     if (!quitting) {
       dialog.showErrorBox("ULTRON PC connection failed", error.message || "Could not start the local service.");
     }
   });
-  child.on("exit", () => {
+  child.on("exit", (code, signal) => {
+    if (!pcAllowed && !pcServiceError) {
+      pcServiceError = "The service process exited before becoming ready (code " + (code === null ? "unknown" : code) + (signal ? ", signal " + signal : "") + ").";
+    }
     pcAllowed = false;
     pcService = null;
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -119,9 +173,9 @@ async function startPcService() {
     pcAllowed = false;
     dialog.showMessageBox(mainWindow, {
       type: "warning",
-      title: "ULTRON could not connect",
+      title: "ULTRON PC service failed to start",
       message: "ULTRON could not start its private PC service.",
-      detail: "Restart ULTRON. Check whether another local companion is already using port 8765.",
+      detail: serviceStartupHelp(),
       buttons: ["OK"]
     });
     return false;
@@ -224,7 +278,18 @@ function createWindow() {
 
 app.setAppUserModelId("com.dsacademy.ultron");
 
-app.whenReady().then(() => {
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+if (!hasSingleInstanceLock) {
+  app.quit();
+} else {
+  app.on("second-instance", () => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
+
+  app.whenReady().then(() => {
   const ses = session.defaultSession;
   ses.setPermissionCheckHandler((_webContents, permission) => {
     if (permission === "media") return micAllowed;
@@ -242,7 +307,8 @@ app.whenReady().then(() => {
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
-});
+  });
+}
 
 ipcMain.handle("ultron:pc-status", async () => ({
   allowed: pcAllowed && await checkLocalService()

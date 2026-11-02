@@ -33,6 +33,8 @@ Currently allowed PC actions include opening selected websites, launching select
 
 Windows 7 / 8.1 use Electron 22 / Chromium 108, a legacy end-of-life runtime with no security updates. Windows 10/11 are preferred. Exact performance depends on the installed hardware and drivers.
 
+**Windows 7 prerequisite:** use Windows 7 SP1 with current system updates. The PyInstaller `_socket` DLL-load failure can occur on unpatched Windows 7 systems. Check whether the applicable security update KB2533623 (or KB3126587 for systems where it applies) is installed, install the applicable update, and restart Windows. Keep the Universal C Runtime and Visual C++ runtime updates current as well. These are Windows operating-system prerequisites and cannot be supplied by the ULTRON app itself.
+
 ## iPhone
 
 The iPhone option installs the website as a Safari home-screen web app. A signed native App Store app is not published.
