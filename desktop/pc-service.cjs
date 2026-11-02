@@ -140,6 +140,13 @@ function createPcService(options) {
       "control panel": ["control panel", "कंट्रोल पैनल"],
       wordpad: ["wordpad", "वर्डपैड"]
     };
+    const closeMatch = value.match(/^(?:please\\s+)?(?:close|quit|exit|terminate|बंद करो|बंद कर दो)\\s+(.+?)\\s*$/i);
+    if (closeMatch) {
+      const target = closeMatch[1].replace(/\\s+(?:app|application)$/i, "").trim();
+      if (target && !/^(?:this|all)\\s+(?:window|windows|tab|tabs)$/i.test(target)) {
+        return { name: "close_app", args: { name: target }, description: "Close " + target };
+      }
+    }
     const openWords = ["open", "launch", "start", "visit", "खोलो", "खोल", "चालू करो", "चलाओ"];
     if (openWords.some((word) => value.includes(word))) {
       for (const name of Object.keys(sites)) {
@@ -158,6 +165,13 @@ function createPcService(options) {
             (name === "downloads" && value.includes("download")) ||
             (hindiFolders[name] && value.includes(hindiFolders[name]))) {
           return { name: "open_folder", args: { name }, description: "Open your " + name + " folder" };
+        }
+      }
+      const genericOpen = value.match(/^(?:please\\s+)?(?:open|launch|start|run|खोलो|खोल|चालू करो|चलाओ)\\s+(.+?)\\s*$/i);
+      if (genericOpen) {
+        const target = genericOpen[1].replace(/^the\\s+/i, "").replace(/\\s+(?:app|application)$/i, "").replace(/^["']|["']$/g, "").trim();
+        if (target.length > 0 && target.length <= 80 && /^[\\p{L}\\p{N} .&()+_-]+$/u.test(target)) {
+          return { name: "launch_app", args: { name: target }, description: "Launch installed app " + target };
         }
       }
     }
@@ -195,6 +209,84 @@ function createPcService(options) {
     previousCpu = current;
     if (!totalDelta) return 0;
     return Math.max(0, Math.min(100, Math.round((1 - idleDelta / totalDelta) * 100)));
+  }
+
+  function runPowerShell(script, timeout = 12000) {
+    if (process.platform !== "win32") throw error(400, "This Windows app action is only available on Windows.");
+    const encoded = Buffer.from(String(script || ""), "utf16le").toString("base64");
+    try {
+      return execFileSync("powershell.exe", [
+        "-NoLogo", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded
+      ], {
+        encoding: "utf8",
+        windowsHide: true,
+        timeout,
+        maxBuffer: 1024 * 1024,
+        stdio: ["ignore", "pipe", "pipe"]
+      }).trim();
+    } catch (err) {
+      const output = String(err && (err.stderr || err.stdout || err.message) || "").trim();
+      const message = output.split(/\\r?\\n/).filter(Boolean).slice(-1)[0] || "Windows could not complete the requested app action.";
+      throw error(400, message.slice(0, 240));
+    }
+  }
+
+  function psQuote(value) {
+    return "'" + String(value || "").replace(/'/g, "''") + "'";
+  }
+
+  let speechVolumeApplied = false;
+  function boostSpeechVolume() {
+    if (process.platform !== "win32") return "Windows speaker boost is available only on Windows.";
+    if (speechVolumeApplied) return "Windows output volume is already boosted for ULTRON.";
+    const script = String.raw`
+$ErrorActionPreference = 'Stop'
+$code = @'
+using System;
+using System.Runtime.InteropServices;
+[Guid("A95664D2-9614-4F35-A746-DE8DB63617E6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDeviceEnumerator {
+  int EnumAudioEndpoints(int dataFlow, int stateMask, out IntPtr devices);
+  int GetDefaultAudioEndpoint(int dataFlow, int role, out IMMDevice endpoint);
+}
+[Guid("D666063F-1587-4E43-81F1-B948E807363F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IMMDevice {
+  int Activate(ref Guid iid, int clsCtx, IntPtr activationParams, [MarshalAs(UnmanagedType.Interface)] out IAudioEndpointVolume volume);
+}
+[Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+interface IAudioEndpointVolume {
+  int RegisterControlChangeNotify(IntPtr notify);
+  int UnregisterControlChangeNotify(IntPtr notify);
+  int GetChannelCount(out uint count);
+  int SetMasterVolumeLevel(float level, Guid context);
+  int SetMasterVolumeLevelScalar(float level, Guid context);
+  int GetMasterVolumeLevel(out float level);
+  int GetMasterVolumeLevelScalar(out float level);
+}
+[ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
+class MMDeviceEnumeratorComObject {}
+public static class UltronAudioVolume {
+  public static float Set(float level) {
+    var enumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+    IMMDevice device;
+    Marshal.ThrowExceptionForHR(enumerator.GetDefaultAudioEndpoint(0, 1, out device));
+    var iid = typeof(IAudioEndpointVolume).GUID;
+    IAudioEndpointVolume volume;
+    Marshal.ThrowExceptionForHR(device.Activate(ref iid, 23, IntPtr.Zero, out volume));
+    float previous;
+    Marshal.ThrowExceptionForHR(volume.GetMasterVolumeLevelScalar(out previous));
+    Marshal.ThrowExceptionForHR(volume.SetMasterVolumeLevelScalar(Math.Max(0.0f, Math.Min(1.0f, level)), Guid.Empty));
+    return previous;
+  }
+}
+'@
+Add-Type -TypeDefinition $code -Language CSharp
+$previous = [UltronAudioVolume]::Set(0.85)
+[Console]::WriteLine(('PREVIOUS:' + [math]::Round($previous * 100)))
+`;
+    runPowerShell(script, 15000);
+    speechVolumeApplied = true;
+    return "Raised Windows master output volume to 85% so ULTRON voice is easier to hear.";
   }
 
   function runWmic(args) {
@@ -305,22 +397,104 @@ function createPcService(options) {
 
   function launchApp(name) {
     const key = String(name || "").trim().toLowerCase();
-    if (process.platform !== "win32" || !Object.prototype.hasOwnProperty.call(WINDOWS_APPS, key)) {
-      throw error(400, "Application is not in the approved app list or is unsupported.");
+    if (process.platform !== "win32") throw error(400, "Installed-app launching is supported on Windows desktop.");
+    if (Object.prototype.hasOwnProperty.call(WINDOWS_APPS, key)) {
+      return new Promise((resolve, reject) => {
+        const child = spawn(WINDOWS_APPS[key], [], {
+          detached: true,
+          stdio: "ignore",
+          windowsHide: false,
+          shell: false
+        });
+        child.once("error", (err) => reject(error(400, err.message || "Could not launch the selected application.")));
+        child.once("spawn", () => {
+          child.unref();
+          resolve("Launched " + key.charAt(0).toUpperCase() + key.slice(1) + ".");
+        });
+      });
     }
-    return new Promise((resolve, reject) => {
-      const child = spawn(WINDOWS_APPS[key], [], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: false,
-        shell: false
-      });
-      child.once("error", (err) => reject(error(400, err.message || "Could not launch the selected application.")));
-      child.once("spawn", () => {
-        child.unref();
-        resolve("Launched " + key.charAt(0).toUpperCase() + key.slice(1) + ".");
-      });
-    });
+    const target = String(name || "").trim();
+    if (!target || target.length > 80 || !/^[\\p{L}\\p{N} .&()+_-]+$/u.test(target)) {
+      throw error(400, "Please say the installed app's name, without a file path or command.");
+    }
+    const script = `
+$ErrorActionPreference = 'Stop'
+$name = ${psQuote(target)}
+$match = $null
+try {
+  $apps = @(Get-StartApps -ErrorAction Stop)
+  $match = $apps | Where-Object { $_.Name -ieq $name } | Select-Object -First 1
+  if (-not $match) { $match = $apps | Where-Object { $_.Name -like ('*' + $name + '*') } | Select-Object -First 1 }
+} catch {}
+if ($match -and $match.AppID) {
+  Start-Process -FilePath 'explorer.exe' -ArgumentList @('shell:AppsFolder\\' + $match.AppID)
+  [Console]::WriteLine('LAUNCHED:' + $match.Name)
+  exit 0
+}
+$roots = @(
+  (Join-Path $env:ProgramData 'Microsoft\\Windows\\Start Menu\\Programs'),
+  (Join-Path $env:APPDATA 'Microsoft\\Windows\\Start Menu\\Programs')
+) | Where-Object { Test-Path $_ }
+$shortcuts = @()
+if ($roots.Count -gt 0) {
+  $shortcuts = @(Get-ChildItem -Path $roots -Filter '*.lnk' -Recurse -ErrorAction SilentlyContinue)
+}
+$shortcut = $shortcuts | Where-Object { $_.BaseName -ieq $name } | Select-Object -First 1
+if (-not $shortcut) { $shortcut = $shortcuts | Where-Object { $_.BaseName -like ('*' + $name + '*') } | Select-Object -First 1 }
+if ($shortcut) {
+  Start-Process -FilePath $shortcut.FullName
+  [Console]::WriteLine('LAUNCHED:' + $shortcut.BaseName)
+  exit 0
+}
+$command = Get-Command -Name $name -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($command -and $command.Source) {
+  Start-Process -FilePath $command.Source
+  [Console]::WriteLine('LAUNCHED:' + $command.Name)
+  exit 0
+}
+throw ('Could not find an installed app or Start Menu shortcut named "' + $name + '".')
+`;
+    const result = runPowerShell(script, 18000);
+    const label = result.split(/\\r?\\n/).find((line) => line.startsWith("LAUNCHED:"));
+    return label ? "Launched " + label.slice(9) + "." : "Launched " + target + ".";
+  }
+
+  function closeApp(name) {
+    if (process.platform !== "win32") throw error(400, "App closing is supported on Windows desktop.");
+    const original = String(name || "").trim();
+    if (!original || original.length > 80) throw error(400, "Please provide the app name you want to close.");
+    const aliases = {
+      "google chrome": "chrome", chrome: "chrome",
+      "microsoft edge": "msedge", edge: "msedge",
+      "visual studio code": "code", "vs code": "code", code: "code",
+      firefox: "firefox", notepad: "notepad", paint: "mspaint",
+      calculator: "CalculatorApp", calc: "CalculatorApp",
+      "task manager": "Taskmgr", "command prompt": "cmd",
+      powershell: "powershell", wordpad: "wordpad",
+      spotify: "Spotify", discord: "Discord", zoom: "Zoom"
+    };
+    const normalized = original.toLowerCase();
+    const processName = aliases[normalized] || original.replace(/\\.exe$/i, "").replace(/[^A-Za-z0-9_.-]/g, "");
+    if (!processName || processName.length > 64 || !/^[A-Za-z0-9_.-]+$/.test(processName)) {
+      throw error(400, "I could not safely identify that app's process name.");
+    }
+    const script = `
+$ErrorActionPreference = 'Stop'
+$name = ${psQuote(processName)}
+$blocked = @('System','Idle','Registry','smss','csrss','wininit','services','lsass','svchost','winlogon','dwm','explorer','node','electron')
+if ($blocked -contains $name) { throw 'That is a protected Windows or ULTRON process and cannot be closed by voice command.' }
+$items = @(Get-Process -Name $name -ErrorAction SilentlyContinue)
+if ($items.Count -eq 0) { throw ('No running app process named "' + $name + '" was found.') }
+$closed = 0
+foreach ($item in $items) {
+  try { Stop-Process -Id $item.Id -Force -ErrorAction Stop; $closed++ } catch {}
+}
+if ($closed -eq 0) { throw 'Windows could not close that app. It may require administrator permission.' }
+[Console]::WriteLine(('CLOSED:' + $closed))
+`;
+    const result = runPowerShell(script, 12000);
+    const count = Number((result.match(/CLOSED:(\\d+)/) || [])[1] || 0);
+    return "Closed " + count + " running " + original + (count === 1 ? " process." : " processes.");
   }
 
   async function openFolder(name) {
@@ -359,6 +533,10 @@ function createPcService(options) {
         return { reply: await openUrl(args.url) };
       case "launch_app":
         return { reply: await launchApp(args.name) };
+      case "close_app":
+        return { reply: closeApp(args.name) };
+      case "boost_speech_volume":
+        return { reply: boostSpeechVolume() };
       case "open_folder":
         return { reply: await openFolder(args.name) };
       case "list_desktop_folders": {
@@ -405,7 +583,7 @@ function createPcService(options) {
           service: "ULTRON Local PC Companion",
           automation_enabled: automationEnabled,
           paired: Boolean(token),
-          version: "1.1.0",
+          version: "1.2.0",
           engine: "electron-node"
         });
       }
