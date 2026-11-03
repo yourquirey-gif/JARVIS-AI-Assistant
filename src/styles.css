@@ -418,3 +418,43 @@ a{color:inherit;text-decoration:none}
 .dictationButton.active{border-color:#e46b7d;background:linear-gradient(120deg,#7d263c,#3c182a);color:#fff0f2}
 .dictationDock span{min-width:0;color:#87a9c0;font-size:8px;line-height:1.5}
 @media(max-width:760px){.dictationDock{width:calc(100% - 20px);gap:7px;padding:7px}.dictationButton{font-size:8px;padding:7px 9px}.dictationDock span{font-size:7px}}
+
+
+/* Command Center dashboard refinement */
+.shell{max-width:1760px;padding:12px 18px 10px}
+.top{height:62px;padding:0 8px}
+.ultronLayout{grid-template-columns:minmax(230px,270px) minmax(440px,1fr) minmax(285px,330px);gap:14px;height:calc(100vh - 104px);min-height:720px;max-height:1100px;padding-top:14px}
+.hudColumn{gap:12px}
+.hudPanel{border-radius:13px;background:linear-gradient(145deg,rgba(15,29,49,.94),rgba(5,13,27,.96));border-color:rgba(112,190,230,.22);box-shadow:0 14px 42px rgba(0,0,0,.28),inset 0 1px rgba(190,230,255,.07)}
+.hudPanel h3{height:38px;font-size:10px;letter-spacing:1.15px}
+.heroPanel{border-radius:16px;background:radial-gradient(ellipse at 50% 32%,rgba(22,75,112,.32),transparent 48%),linear-gradient(155deg,rgba(10,24,43,.94),rgba(3,10,23,.97));border:1px solid rgba(100,194,235,.25);box-shadow:0 18px 55px rgba(0,0,0,.3),inset 0 1px rgba(195,235,255,.07);min-width:0}
+.heroTopline{padding:13px 17px;border-bottom:1px solid rgba(116,192,230,.13)}
+.heroStage{min-height:430px}
+.ultronVisual{max-width:610px;margin:0 auto}
+.codepenVoiceDock{margin:0 16px 12px;border:1px solid rgba(93,220,239,.34);border-radius:14px;background:linear-gradient(90deg,rgba(13,54,75,.88),rgba(9,31,54,.92));box-shadow:0 0 28px rgba(45,194,226,.13)}
+.chatComposer{border:1px solid rgba(94,194,229,.28);border-radius:10px;background:rgba(3,12,25,.82);margin:10px}
+.chatComposer input{min-width:0}
+.chatBubble{border:1px solid rgba(108,184,220,.12);border-radius:9px}
+.monitorStat,.overviewMetric{transition:background .2s ease}
+.monitorStat{border-bottom:1px solid rgba(123,188,226,.09)}
+.sideFoot,.heroFooter,.ultronFooter{letter-spacing:.8px}
+@media (min-width:1500px){
+  .ultronLayout{grid-template-columns:270px minmax(560px,1fr) 330px;gap:16px}
+  .heroStage{min-height:490px}
+  .hudPanel h3{height:40px}
+}
+@media (max-width:1120px){
+  .ultronLayout{grid-template-columns:minmax(210px,.82fr) minmax(390px,1.35fr);height:auto;max-height:none;min-height:0}
+  .hudRight{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+  .heroPanel{min-height:720px}
+}
+@media (max-width:760px){
+  .shell{padding:8px}
+  .ultronLayout{display:flex;flex-direction:column;height:auto;min-height:0;gap:10px}
+  .hudLeft{order:2}
+  .heroPanel{order:1;min-height:0}
+  .hudRight{order:3;display:flex;flex-direction:column}
+  .heroStage{min-height:360px}
+  .heroFooter{flex-wrap:wrap;gap:9px;padding:10px}
+  .codepenVoiceDock{margin:0 9px 10px}
+}
