@@ -29,9 +29,12 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Install Node dependencies
         run: npm install --no-audit --no-fund
+      - name: Verify modern Windows runtime target
+        run: |
+          node -e "const p=require('./package.json'); if (p.devDependencies.electron !== '45.2.1' || p.build.electronVersion !== '45.2.1') process.exit(1); console.log('Electron 45.2.1: Windows 10+ / Windows 11 x64 target')"
       - name: Build ULTRON web interface
         env:
           VITE_JARVIS_CLOUD_API_URL: https://jarvis-ai-assistant-9ra4.onrender.com
@@ -87,7 +90,7 @@ jobs:
             Copy-Item $artifactCopy "public/downloads/ULTRON-Windows-Setup.exe" -Force
             Copy-Item $artifactCopy "public/downloads/ULTRON-Windows-Setup-$version.exe" -Force
             if (Test-Path "public/downloads/ULTRON-Desktop.exe") { Remove-Item "public/downloads/ULTRON-Desktop.exe" -Force }
-            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const file='public/app-updates/windows.json'; const versioned='public/app-updates/windows-'+pkg.version+'.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); manifest.version=pkg.version; manifest.download='/downloads/ULTRON-Windows-Setup-'+pkg.version+'.exe'; manifest.releaseNotes='Windows '+pkg.version+': amplified ULTRON AI voice, reliable Unicode typing, website search with numbered choices, app open/close and safe file actions.'; const content=JSON.stringify(manifest,null,2)+String.fromCharCode(10); fs.writeFileSync(file,content,'utf8'); fs.writeFileSync(versioned,content,'utf8'); console.log('Published versioned Windows manifest '+versioned+' -> '+manifest.download);"
+            node -e "const fs=require('fs'); const pkg=JSON.parse(fs.readFileSync('package.json','utf8')); const file='public/app-updates/windows.json'; const versioned='public/app-updates/windows-'+pkg.version+'.json'; const manifest=JSON.parse(fs.readFileSync(file,'utf8')); manifest.version=pkg.version; manifest.download='/downloads/ULTRON-Windows-Setup-'+pkg.version+'.exe'; manifest.releaseNotes='Windows '+pkg.version+': modern Electron 45 runtime for Windows 10 and Windows 11 (64-bit), refreshed Chromium engine, amplified ULTRON AI voice, Unicode typing fixes, website search, app controls and safe PC actions.'; const content=JSON.stringify(manifest,null,2)+String.fromCharCode(10); fs.writeFileSync(file,content,'utf8'); fs.writeFileSync(versioned,content,'utf8'); console.log('Published versioned Windows manifest '+versioned+' -> '+manifest.download);"
             if ($LASTEXITCODE -ne 0) { throw "Could not update the Windows release manifest." }
             git add -A public/downloads/ public/app-updates/windows.json public/app-updates/windows-$version.json
             git diff --cached --quiet
