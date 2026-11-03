@@ -134,7 +134,7 @@ export default function App() {
   const checkAppUpdate = async () => {
     setCheckingUpdate(true);
     const platform = IS_NATIVE_ANDROID ? "android" : IS_NATIVE_DESKTOP ? "windows" : "web";
-    const base = IS_NATIVE_ANDROID ? UPDATE_ORIGIN : window.location.origin;
+    const base = (IS_NATIVE_ANDROID || IS_NATIVE_DESKTOP) ? UPDATE_ORIGIN : window.location.origin;
     try {
       const manifestPath = platform === "windows"
         ? "/app-updates/windows.json"
