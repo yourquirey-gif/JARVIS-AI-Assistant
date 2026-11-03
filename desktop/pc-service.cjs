@@ -121,7 +121,7 @@ function createPcService(options) {
   function detectAction(input) {
     const rawValue = String(input || "").trim();
     const value = rawValue.toLowerCase().replace(/\s+/g, " ");
-    const typeMatch = rawValue.match(/^(?:type|write|enter|लिखो|लिख दो|लिखिए|टाइप करो)\s+([\s\S]{1,1000})$/i);
+    const typeMatch = rawValue.match(/^(?:(?:please\s+)?(?:type|write|enter)(?:\s+(?:it|this))?|type\s+(?:karo|kar\s+do)|लिखो|लिख\s+दो|लिखिए|टाइप\s+करो)\s+([\s\S]{1,1000})$/i);
     if (typeMatch) {
       return { name: "type_text", args: { text: typeMatch[1] }, description: "Type the requested text into the active app" };
     }
@@ -246,7 +246,8 @@ function createPcService(options) {
     } catch (err) {
       const output = String(err && (err.stderr || err.stdout || err.message) || "").trim();
       const message = output.split(/\r?\n/).filter(Boolean).slice(-1)[0] || "Windows could not complete the requested app action.";
-      throw error(400, message.slice(0, 240));
+      const status = err && err.code === "ETIMEDOUT" ? 504 : 500;
+      throw error(status, message.slice(0, 240));
     }
   }
 
