@@ -137,7 +137,7 @@ export default function App() {
     const base = IS_NATIVE_ANDROID ? UPDATE_ORIGIN : window.location.origin;
     try {
       const manifestPath = platform === "windows"
-        ? `/app-updates/windows-${APP_VERSION}.json`
+        ? "/app-updates/windows.json"
         : `/app-updates/${platform}.json`;
       let response = await fetch(`${base}${manifestPath}?check=${Date.now()}`, {
         cache: "no-store",
